@@ -1,0 +1,8 @@
+Smoke counter
+
+Usage: smoke-counter [COMMAND]
+
+Commands:
+  add 	  Add smoke to journal
+  report  Show smoke journal
+  help 	  Show this help message
