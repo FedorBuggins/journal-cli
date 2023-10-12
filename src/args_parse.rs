@@ -1,14 +1,25 @@
 #[derive(Debug, PartialEq)]
 pub enum Command {
   Add,
-  Report,
+  Details(usize),
+  Report(usize),
   Help,
 }
 
 pub fn parse(args: &[String]) -> Option<Command> {
   match args.first()?.to_lowercase().replace("-", "").as_str() {
     "add" | "a" => Some(Command::Add),
-    "report" | "r" => Some(Command::Report),
+    "report" | "r" => {
+      let n = args
+        .iter()
+        .nth(1)
+        .and_then(|it| it.parse::<isize>().ok())
+        .unwrap_or(0);
+      if n > 0 {
+        return Some(Command::Report(n as _));
+      }
+      Some(Command::Details(n.abs_diff(0)))
+    }
     "help" | "h" => Some(Command::Help),
     _ => None,
   }
@@ -27,7 +38,7 @@ mod tests {
   #[test]
   fn parse_report_command() {
     let cmd = parse(&["Report".to_string()]);
-    assert_eq!(cmd, Some(Command::Report));
+    assert_eq!(cmd, Some(Command::Details(1)));
   }
 
   #[test]
