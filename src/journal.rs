@@ -6,15 +6,13 @@ use std::{
 
 use chrono::{DateTime, FixedOffset, NaiveDate, ParseError, Utc};
 
-const DATA_FOLDER: &str = "journal";
-
 pub type Records = Vec<DateTime<FixedOffset>>;
 
 pub struct Journal;
 
 impl Journal {
-  pub fn get(&self, date: NaiveDate) -> io::Result<Records> {
-    read_if_exist(&format!("{DATA_FOLDER}/{date}.txt"))?
+  pub fn day_records(&self, date: NaiveDate) -> io::Result<Records> {
+    read_if_exist(&get_path(date))?
       .unwrap_or_default()
       .lines()
       .map(DateTime::parse_from_rfc3339)
@@ -24,13 +22,18 @@ impl Journal {
 
   pub fn add(&self, dt: DateTime<Utc>) -> io::Result<()> {
     let date = dt.date_naive();
-    let mut journal = OpenOptions::new()
+    let mut day_journal = OpenOptions::new()
       .create(true)
       .append(true)
-      .open(format!("{DATA_FOLDER}/{date}.txt"))?;
-    journal.write((dt.to_rfc3339() + "\n").as_bytes())?;
+      .open(get_path(date))?;
+    day_journal.write((dt.to_rfc3339() + "\n").as_bytes())?;
     Ok(())
   }
+}
+
+fn get_path(date: NaiveDate) -> String {
+  const DATA_FOLDER: &str = "journal";
+  format!("{DATA_FOLDER}/{date}.txt")
 }
 
 fn read_if_exist(path: &str) -> io::Result<Option<String>> {

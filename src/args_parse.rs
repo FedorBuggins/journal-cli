@@ -7,19 +7,14 @@ pub enum Command {
 }
 
 pub fn parse(args: &[String]) -> Option<Command> {
-  match args.first()?.to_lowercase().replace("-", "").as_str() {
+  let mut args = args.iter();
+  let cmd = args.next()?.to_lowercase().replace('-', "");
+  let days_offset =
+    args.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+  match cmd.as_str() {
     "add" | "a" => Some(Command::Add),
-    "report" | "r" => {
-      let n = args
-        .iter()
-        .nth(1)
-        .and_then(|it| it.parse::<isize>().ok())
-        .unwrap_or(0);
-      if n > 0 {
-        return Some(Command::Report(n as _));
-      }
-      Some(Command::Details(n.abs_diff(0)))
-    }
+    "details" | "d" => Some(Command::Details(days_offset)),
+    "report" | "r" => Some(Command::Report(days_offset)),
     "help" | "h" => Some(Command::Help),
     _ => None,
   }
@@ -38,7 +33,7 @@ mod tests {
   #[test]
   fn parse_report_command() {
     let cmd = parse(&["Report".to_string()]);
-    assert_eq!(cmd, Some(Command::Details(1)));
+    assert_eq!(cmd, Some(Command::Report(0)));
   }
 
   #[test]
