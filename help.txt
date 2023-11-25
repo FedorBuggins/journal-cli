@@ -1,9 +1,0 @@
-Smoke journal
-
-Usage: smoke-journal [COMMAND] <OPTIONS>
-
-Commands:
-  add 	              Add smoke record to journal
-  details <DAYS_AGO>  Show smoke records for single day
-  report  <DAYS_AGO>  Show smoke counts for several days
-  help 	              Show this help message
