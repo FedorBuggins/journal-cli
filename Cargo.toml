@@ -1,5 +1,5 @@
 [package]
-name = "smoke_counter"
+name = "smoke_journal"
 version = "0.1.0"
 edition = "2021"
 

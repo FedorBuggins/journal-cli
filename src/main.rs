@@ -1,34 +1,32 @@
 mod app;
 mod event;
+mod journal;
 mod tui;
 mod ui;
 mod update;
 
 use anyhow::Result;
 use app::App;
-use event::{Event, EventHandler};
+use event::EventHandler;
 use ratatui::prelude::{CrosstermBackend, Terminal};
 use tui::Tui;
-use update::update;
+use update::handle_event;
 
 fn main() -> Result<()> {
-  let mut app = App::default();
-  let mut tui = Tui::new(
-    Terminal::new(CrosstermBackend::new(std::io::stderr()))?,
-    EventHandler::new(250),
-  );
-
+  let backend = CrosstermBackend::new(std::io::stderr());
+  let terminal = Terminal::new(backend)?;
+  let mut tui = Tui::new(terminal, EventHandler::new(250));
   tui.enter()?;
-
-  while !app.should_quit() {
-    tui.draw(&mut app)?;
-    match tui.events.next()? {
-      Event::Tick => {}
-      Event::Key(k_event) => update(&mut app, k_event),
-    };
-  }
-
+  run(&mut tui)?;
   tui.exit()?;
+  Ok(())
+}
 
+fn run(tui: &mut Tui) -> Result<()> {
+  let mut app = App::default();
+  while !app.should_quit() {
+    tui.draw(&app)?;
+    handle_event(&mut app, tui.events.next()?);
+  }
   Ok(())
 }

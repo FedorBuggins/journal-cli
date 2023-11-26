@@ -4,14 +4,17 @@ use std::{
   path::Path,
 };
 
-use chrono::{DateTime, FixedOffset, NaiveDate, ParseError, Utc};
+use chrono::{DateTime, FixedOffset, Local, NaiveDate, ParseError};
 
-pub type Records = Vec<DateTime<FixedOffset>>;
+pub type DayRecords = Vec<DateTime<FixedOffset>>;
 
 pub struct Journal;
 
 impl Journal {
-  pub fn day_records(&self, date: NaiveDate) -> io::Result<Records> {
+  pub fn day_records(
+    &self,
+    date: NaiveDate,
+  ) -> io::Result<DayRecords> {
     read_if_exist(&get_path(date))?
       .unwrap_or_default()
       .lines()
@@ -20,13 +23,13 @@ impl Journal {
       .map_err(to_io_error)
   }
 
-  pub fn add(&self, dt: DateTime<Utc>) -> io::Result<()> {
+  pub fn add(&self, dt: DateTime<Local>) -> io::Result<()> {
     let date = dt.date_naive();
     let mut day_journal = OpenOptions::new()
       .create(true)
       .append(true)
       .open(get_path(date))?;
-    day_journal.write((dt.to_rfc3339() + "\n").as_bytes())?;
+    day_journal.write_all((dt.to_rfc3339() + "\n").as_bytes())?;
     Ok(())
   }
 }

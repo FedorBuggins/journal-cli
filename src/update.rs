@@ -1,17 +1,22 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode::*, KeyEvent, KeyModifiers};
 
-use crate::app::App;
+use crate::{app::App, event::Event};
 
-pub fn update(app: &mut App, k_event: KeyEvent) {
-  use KeyCode::*;
+pub fn handle_event(app: &mut App, event: Event) {
+  if let Event::Key(k_event) = event {
+    handle_key_event(app, k_event)
+  }
+}
 
+fn handle_key_event(app: &mut App, k_event: KeyEvent) {
   match k_event.code {
-    Right | Char('j') => app.increment_counter(),
-    Left | Char('k') => app.decrement_counter(),
+    Left => app.prev_date(),
+    Right => app.next_date(),
+    Char('s') => app.add_smoke_record(),
     Esc | Char('q') => app.quit(),
     Char('c' | 'C') if k_event.modifiers == KeyModifiers::CONTROL => {
       app.quit()
     }
-    _ => {}
-  };
+    _ => (),
+  }
 }
