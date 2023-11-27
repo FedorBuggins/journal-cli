@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use chrono::{Days, Local, NaiveDate, Timelike};
 use ratatui::{
-  prelude::{Alignment, Constraint, Direction, Frame, Layout},
-  style::{Color, Style},
+  prelude::{Alignment, Constraint, Direction, Frame, Layout, Rect},
+  style::{Color, Modifier, Style},
   text::Line,
   widgets::{
     Bar, BarChart, BarGroup, Block, BorderType, Borders, Padding,
@@ -14,19 +14,7 @@ use ratatui::{
 use crate::app::App;
 
 pub fn render(app: &App, f: &mut Frame) {
-  let layout = Layout::default()
-    .direction(Direction::Vertical)
-    .constraints([
-      Constraint::Length(4),
-      Constraint::Length(2),
-      Constraint::Max(10),
-      Constraint::Length(1),
-      Constraint::Min(15),
-    ])
-    .split(f.size());
-
-  let [header, date, day, _, dates] =
-    [0, 1, 2, 3, 4].map(|i| layout[i]);
+  let (header, date, dates, time) = layout(f);
 
   f.render_widget(
     help_paragraph()
@@ -34,7 +22,11 @@ pub fn render(app: &App, f: &mut Frame) {
         Block::default()
           .title("Smoke Journal")
           .title_alignment(Alignment::Center)
-          .title_style(Style::default().fg(Color::Yellow))
+          .title_style(
+            Style::default()
+              .fg(Color::Yellow)
+              .add_modifier(Modifier::BOLD),
+          )
           .padding(Padding::uniform(1)),
       )
       .style(Style::default().fg(Color::DarkGray))
@@ -44,36 +36,66 @@ pub fn render(app: &App, f: &mut Frame) {
 
   f.render_widget(
     date_paragraph(app.date())
-      .style(Style::default().fg(Color::Green))
+      .style(
+        Style::default()
+          .fg(Color::Green)
+          .add_modifier(Modifier::BOLD),
+      )
       .alignment(Alignment::Center),
     date,
   );
 
   f.render_widget(
-    today_smoke_records_bar_chart(app)
+    date_smoke_records_bar_chart(app)
       .block(
         Block::default()
-          .title("Smokes by hours")
-          .padding(Padding::horizontal(1))
-          .borders(Borders::ALL)
-          .border_type(BorderType::Rounded),
-      )
-      .style(Style::default().fg(Color::Yellow)),
-    day,
-  );
-
-  f.render_widget(
-    two_weeks_smoke_records_bar_chart(app)
-      .block(
-        Block::default()
-          .title("Smokes by dates")
-          .padding(Padding::horizontal(1))
+          .title("Date")
+          .padding(Padding::uniform(1))
           .borders(Borders::ALL)
           .border_type(BorderType::Rounded),
       )
       .style(Style::default().fg(Color::Yellow)),
     dates,
-  )
+  );
+
+  f.render_widget(
+    time_smoke_records_bar_chart(app)
+      .block(
+        Block::default()
+          .title("Time")
+          .padding(Padding::uniform(1))
+          .borders(Borders::ALL)
+          .border_type(BorderType::Rounded),
+      )
+      .style(Style::default().fg(Color::Yellow)),
+    time,
+  );
+}
+
+fn layout(f: &Frame<'_>) -> (Rect, Rect, Rect, Rect) {
+  let layout = Layout::default()
+    .direction(Direction::Vertical)
+    .constraints([
+      Constraint::Length(4),
+      Constraint::Length(2),
+      Constraint::Length(28),
+      Constraint::Length(0),
+    ])
+    .split(f.size());
+
+  let [header, date, other] = [0, 1, 2].map(|i| layout[i]);
+
+  let layout = Layout::default()
+    .direction(Direction::Horizontal)
+    .constraints([
+      Constraint::Percentage(72),
+      Constraint::Percentage(28),
+    ])
+    .split(other);
+
+  let [dates, time] = [0, 1].map(|i| layout[i]);
+
+  (header, date, dates, time)
 }
 
 fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
@@ -86,36 +108,40 @@ fn help_paragraph<'a>() -> Paragraph<'a> {
   )
 }
 
-fn today_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
-  let rec_map_by_hour = app.date_smoke_records().into_iter().fold(
+fn time_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
+  let rec_map = app.date_smoke_records().into_iter().fold(
     HashMap::new(),
-    |mut acc, dt| {
-      let h = dt.time().hour();
-      *acc.entry(h).or_default() += 1;
-      acc
+    |mut map, dt| {
+      *map.entry(dt.time().hour()).or_default() += 1;
+      map
     },
   );
 
-  BarChart::default().bar_width(2).bar_gap(2).max(3).data(
-    BarGroup::default().bars(
-      &(0..12)
-        .map(|mut h| {
-          h *= 2;
-          Bar::default().label(Line::raw(h.to_string())).value(
-            (h..=h + 1).flat_map(|h| rec_map_by_hour.get(&h)).sum(),
-          )
-        })
-        .collect::<Vec<_>>(),
-    ),
-  )
+  BarChart::default()
+    .direction(Direction::Horizontal)
+    .bar_gap(0)
+    .max(2)
+    .data(
+      BarGroup::default().bars(
+        &(0..24)
+          .map(|h| {
+            Bar::default()
+              .label(Line::raw(format!("{:0>2}:00", h)))
+              .value(rec_map.get(&h).copied().unwrap_or_default())
+              .text_value(String::new())
+              .style(Style::default().fg(Color::Red))
+          })
+          .collect::<Vec<_>>(),
+      ),
+    )
 }
 
-fn two_weeks_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
+fn date_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
   let today = Local::now().date_naive();
-  BarChart::default().bar_width(2).bar_gap(2).max(15).data(
+  BarChart::default().bar_width(2).bar_gap(2).data(
     BarGroup::default().bars(
       &app
-        .smoke_records_for(today - Days::new(13), today)
+        .smoke_records_for(today - Days::new(9), today)
         .map(|(date, recs)| {
           let color = if date == app.date() {
             Color::Green
