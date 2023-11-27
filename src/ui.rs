@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use chrono::{Days, Local, NaiveDate, Timelike};
+use chrono::{
+  Datelike, Days, Duration, Local, Month, NaiveDate, Timelike,
+};
 use ratatui::{
   prelude::{Alignment, Constraint, Direction, Frame, Layout, Rect},
   style::{Color, Modifier, Style},
@@ -14,7 +16,7 @@ use ratatui::{
 use crate::app::App;
 
 pub fn render(app: &App, f: &mut Frame) {
-  let (header, date, dates, time) = layout(f);
+  let (header, date, dates, time, year) = layout(f);
 
   f.render_widget(
     help_paragraph()
@@ -26,8 +28,7 @@ pub fn render(app: &App, f: &mut Frame) {
             Style::default()
               .fg(Color::Yellow)
               .add_modifier(Modifier::BOLD),
-          )
-          .padding(Padding::uniform(1)),
+          ),
       )
       .style(Style::default().fg(Color::DarkGray))
       .alignment(Alignment::Center),
@@ -50,7 +51,7 @@ pub fn render(app: &App, f: &mut Frame) {
       .block(
         Block::default()
           .title("Date")
-          .padding(Padding::uniform(1))
+          .padding(Padding::horizontal(1))
           .borders(Borders::ALL)
           .border_type(BorderType::Rounded),
       )
@@ -63,39 +64,61 @@ pub fn render(app: &App, f: &mut Frame) {
       .block(
         Block::default()
           .title("Time")
-          .padding(Padding::uniform(1))
+          .padding(Padding::horizontal(1))
           .borders(Borders::ALL)
           .border_type(BorderType::Rounded),
       )
       .style(Style::default().fg(Color::Yellow)),
     time,
   );
+
+  f.render_widget(
+    year_smoke_records_bar_chart(app)
+      .block(
+        Block::default()
+          .title("Year")
+          .padding(Padding::horizontal(1))
+          .borders(Borders::ALL)
+          .border_type(BorderType::Rounded),
+      )
+      .style(Style::default().fg(Color::Yellow)),
+    year,
+  );
 }
 
-fn layout(f: &Frame<'_>) -> (Rect, Rect, Rect, Rect) {
-  let layout = Layout::default()
-    .direction(Direction::Vertical)
-    .constraints([
-      Constraint::Length(4),
-      Constraint::Length(2),
-      Constraint::Length(28),
-      Constraint::Length(0),
-    ])
-    .split(f.size());
+fn layout(f: &Frame<'_>) -> (Rect, Rect, Rect, Rect, Rect) {
+  let [header, date, date_time, year] = destruct_layout(
+    &Layout::default()
+      .direction(Direction::Vertical)
+      .constraints([
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Length(26),
+        Constraint::Min(5),
+      ])
+      .split(f.size()),
+  );
 
-  let [header, date, other] = [0, 1, 2].map(|i| layout[i]);
+  let [dates, time] = destruct_layout(
+    &Layout::default()
+      .direction(Direction::Horizontal)
+      .constraints([
+        Constraint::Percentage(72),
+        Constraint::Percentage(28),
+      ])
+      .split(date_time),
+  );
 
-  let layout = Layout::default()
-    .direction(Direction::Horizontal)
-    .constraints([
-      Constraint::Percentage(72),
-      Constraint::Percentage(28),
-    ])
-    .split(other);
+  (header, date, dates, time, year)
+}
 
-  let [dates, time] = [0, 1].map(|i| layout[i]);
-
-  (header, date, dates, time)
+fn destruct_layout<const N: usize>(layout: &[Rect]) -> [Rect; N] {
+  let mut i = 0;
+  [0; N].map(|_| {
+    let rect = layout[i];
+    i += 1;
+    rect
+  })
 }
 
 fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
@@ -153,6 +176,37 @@ fn date_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
             .label(Line::raw(date.format("%d").to_string()))
             .value(recs.len() as _)
             .style(Style::default().fg(color))
+        })
+        .collect::<Vec<_>>(),
+    ),
+  )
+}
+
+fn year_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
+  let today = Local::now().date_naive();
+  let mut map = app
+    .smoke_records_for(today - Duration::days(365), today)
+    .fold(
+      HashMap::new(),
+      |mut map: HashMap<u8, usize>, (date, recs)| {
+        *map.entry(date.month0() as _).or_default() += recs.len();
+        map
+      },
+    )
+    .into_iter()
+    .collect::<Vec<_>>();
+  map.sort_by_key(|&(m, _)| (m + 11 - today.month0() as u8) % 12);
+  BarChart::default().bar_width(3).bar_gap(1).data(
+    BarGroup::default().bars(
+      &map
+        .into_iter()
+        .map(|(m, count)| {
+          Bar::default()
+            .label(Line::raw(
+              Month::try_from(m + 1).unwrap().name()[0..3]
+                .to_string(),
+            ))
+            .value(count as _)
         })
         .collect::<Vec<_>>(),
     ),
