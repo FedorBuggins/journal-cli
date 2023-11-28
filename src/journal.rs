@@ -1,5 +1,5 @@
 use std::{
-  fs::{read_to_string, OpenOptions},
+  fs::{read_to_string, write, OpenOptions},
   io::{self, Write},
   path::Path,
 };
@@ -30,6 +30,21 @@ impl Journal {
       .append(true)
       .open(get_path(date))?;
     day_journal.write_all((dt.to_rfc3339() + "\n").as_bytes())?;
+    Ok(())
+  }
+
+  pub fn remove(&self, dt: DateTime<Local>) -> io::Result<()> {
+    let recs = self.day_records(dt.date_naive())?;
+    if !recs.is_empty() {
+      write(
+        get_path(dt.date_naive()),
+        recs
+          .into_iter()
+          .filter(|rec| rec != &dt)
+          .map(|dt| dt.to_rfc3339() + "\n")
+          .collect::<String>(),
+      )?;
+    }
     Ok(())
   }
 }

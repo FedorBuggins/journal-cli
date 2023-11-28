@@ -1,62 +1,127 @@
-use chrono::{Local, NaiveDate};
+use std::collections::HashMap;
 
-use crate::journal::{DayRecords, Journal};
+use chrono::{
+  DateTime, Datelike, Days, Duration, Local, Month, NaiveDate,
+  Timelike,
+};
+
+use crate::journal::Journal;
+
+pub type Hour = u8;
 
 pub struct App {
   journal: Journal,
-  date: NaiveDate,
+  state: State,
+  added_smokes: Vec<DateTime<Local>>,
   should_quit: bool,
 }
 
-impl Default for App {
-  fn default() -> Self {
-    Self {
-      journal: Journal,
-      date: Local::now().date_naive(),
-      should_quit: false,
-    }
-  }
+#[derive(Default)]
+pub struct State {
+  pub date: NaiveDate,
+  pub date_smokes_by_hour: HashMap<Hour, usize>,
+  pub recently_dates_smokes_count: Vec<(NaiveDate, usize)>,
+  pub year_smokes_by_month: HashMap<Month, usize>,
 }
 
 impl App {
-  pub fn date(&self) -> NaiveDate {
-    self.date
+  pub fn new() -> Self {
+    Self {
+      journal: Journal,
+      state: State::default(),
+      added_smokes: Vec::new(),
+      should_quit: false,
+    }
+    .init()
   }
 
-  pub fn prev_date(&mut self) {
-    self.date = self.date.pred_opt().unwrap();
+  fn init(mut self) -> Self {
+    self.resolve(Local::now().date_naive());
+    self
   }
 
-  pub fn next_date(&mut self) {
-    self.date =
-      self.date.succ_opt().unwrap().min(Local::now().date_naive());
+  fn resolve(&mut self, date: NaiveDate) {
+    let today = Local::now().date_naive();
+    self.state.date = date;
+    self.state.date_smokes_by_hour = self.date_smokes_by_hour();
+    self.state.recently_dates_smokes_count = self
+      .smoke_records_for(today - Days::new(9), today)
+      .collect();
+    self.state.year_smokes_by_month = self.year_smokes_by_month();
   }
 
-  pub fn date_smoke_records(&self) -> DayRecords {
+  fn date_smokes_by_hour(&self) -> HashMap<Hour, usize> {
     self
       .journal
-      .day_records(self.date)
-      .expect("can't get today records")
-  }
-
-  pub fn smoke_records_for(
-    &self,
-    start: NaiveDate,
-    end: NaiveDate,
-  ) -> impl Iterator<Item = (NaiveDate, DayRecords)> + '_ {
-    start
-      .iter_days()
-      .take_while(move |date| date <= &end)
-      .flat_map(|date| {
-        self.journal.day_records(date).map(|recs| (date, recs))
+      .day_records(self.state.date)
+      .unwrap_or_default()
+      .into_iter()
+      .fold(HashMap::new(), |mut map, dt| {
+        *map.entry(dt.time().hour() as _).or_default() += 1;
+        map
       })
   }
 
-  pub fn add_smoke_record(&mut self) {
+  fn year_smokes_by_month(&self) -> HashMap<Month, usize> {
+    let today = Local::now().date_naive();
+
     self
-      .journal
-      .add(Local::now())
-      .expect("can't add smoke record");
+      .smoke_records_for(today - Duration::days(365), today)
+      .fold(HashMap::new(), |mut map, (date, recs_count)| {
+        let month = Month::try_from(date.month0() as u8 + 1)
+          .expect("invalid month number");
+        *map.entry(month).or_default() += recs_count;
+        map
+      })
+  }
+
+  fn smoke_records_for(
+    &self,
+    start: NaiveDate,
+    end: NaiveDate,
+  ) -> impl Iterator<Item = (NaiveDate, usize)> + '_ {
+    start.iter_days().take_while(move |date| date <= &end).map(
+      |date| {
+        (
+          date,
+          self.journal.day_records(date).unwrap_or_default().len(),
+        )
+      },
+    )
+  }
+
+  pub fn state(&self) -> &State {
+    &self.state
+  }
+
+  pub fn prev_date(&mut self) {
+    self.state.date =
+      self.state.date.pred_opt().expect("can't get previous date");
+    self.state.date_smokes_by_hour = self.date_smokes_by_hour();
+  }
+
+  pub fn next_date(&mut self) {
+    self.state.date = self
+      .state
+      .date
+      .succ_opt()
+      .expect("can't get next date")
+      .min(Local::now().date_naive());
+    self.state.date_smokes_by_hour = self.date_smokes_by_hour();
+  }
+
+  pub fn add_smoke_record(&mut self) {
+    let rec = Local::now();
+    self.journal.add(rec).expect("can't add smoke record");
+    self.added_smokes.push(rec);
+    self.resolve(self.state.date);
+  }
+
+  pub fn undo(&mut self) {
+    if let Some(rec) = self.added_smokes.pop() {
+      self.journal.remove(rec).expect("can't remove smoke record");
+      self.resolve(self.state.date);
+    }
   }
 
   pub fn should_quit(&self) -> bool {

@@ -12,21 +12,23 @@ use ratatui::prelude::{CrosstermBackend, Terminal};
 use tui::Tui;
 use update::handle_event;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
   let backend = CrosstermBackend::new(std::io::stderr());
   let terminal = Terminal::new(backend)?;
-  let mut tui = Tui::new(terminal, EventHandler::new(250));
+  let mut tui = Tui::new(terminal, EventHandler::new());
   tui.enter()?;
-  run(&mut tui)?;
+  run(&mut tui).await?;
   tui.exit()?;
   Ok(())
 }
 
-fn run(tui: &mut Tui) -> Result<()> {
-  let mut app = App::default();
+async fn run(tui: &mut Tui) -> Result<()> {
+  let mut app = App::new();
+  tui.draw(&app)?;
   while !app.should_quit() {
+    handle_event(&mut app, tui.events.next().await?);
     tui.draw(&app)?;
-    handle_event(&mut app, tui.events.next()?);
   }
   Ok(())
 }

@@ -45,7 +45,7 @@ impl Tui {
   }
 
   pub fn draw(&mut self, app: &App) -> Result<()> {
-    self.terminal.draw(|frame| ui::render(app, frame))?;
+    self.terminal.draw(|frame| ui::render(app.state(), frame))?;
     Ok(())
   }
 

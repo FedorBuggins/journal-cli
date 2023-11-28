@@ -1,10 +1,8 @@
-use std::collections::HashMap;
+mod layout;
 
-use chrono::{
-  Datelike, Days, Duration, Local, Month, NaiveDate, Timelike,
-};
+use chrono::{Datelike, Local, Month, NaiveDate};
 use ratatui::{
-  prelude::{Alignment, Constraint, Direction, Frame, Layout, Rect},
+  prelude::{Alignment, Direction, Frame},
   style::{Color, Modifier, Style},
   text::Line,
   widgets::{
@@ -13,30 +11,33 @@ use ratatui::{
   },
 };
 
-use crate::app::App;
+use crate::app::State;
 
-pub fn render(app: &App, f: &mut Frame) {
-  let (header, date, dates, time, year) = layout(f);
+use self::layout::Body;
+
+pub fn render(state: &State, f: &mut Frame) {
+  let Body {
+    title,
+    date,
+    dates,
+    time,
+    year,
+    help,
+  } = Body::new(f.size());
 
   f.render_widget(
-    help_paragraph()
-      .block(
-        Block::default()
-          .title("Smoke Journal")
-          .title_alignment(Alignment::Center)
-          .title_style(
-            Style::default()
-              .fg(Color::Yellow)
-              .add_modifier(Modifier::BOLD),
-          ),
-      )
-      .style(Style::default().fg(Color::DarkGray))
-      .alignment(Alignment::Center),
-    header,
+    Paragraph::new("Smoker Journal")
+      .alignment(Alignment::Center)
+      .style(
+        Style::default()
+          .fg(Color::Yellow)
+          .add_modifier(Modifier::BOLD),
+      ),
+    title,
   );
 
   f.render_widget(
-    date_paragraph(app.date())
+    date_paragraph(state.date)
       .style(
         Style::default()
           .fg(Color::Green)
@@ -47,7 +48,7 @@ pub fn render(app: &App, f: &mut Frame) {
   );
 
   f.render_widget(
-    date_smoke_records_bar_chart(app)
+    date_smoke_records_bar_chart(state)
       .block(
         Block::default()
           .title("Date")
@@ -60,7 +61,7 @@ pub fn render(app: &App, f: &mut Frame) {
   );
 
   f.render_widget(
-    time_smoke_records_bar_chart(app)
+    time_smoke_records_bar_chart(state)
       .block(
         Block::default()
           .title("Time")
@@ -73,52 +74,24 @@ pub fn render(app: &App, f: &mut Frame) {
   );
 
   f.render_widget(
-    year_smoke_records_bar_chart(app)
+    year_smoke_records_bar_chart(state)
       .block(
         Block::default()
           .title("Year")
-          .padding(Padding::horizontal(1))
+          .padding(Padding::horizontal(4))
           .borders(Borders::ALL)
           .border_type(BorderType::Rounded),
       )
       .style(Style::default().fg(Color::Yellow)),
     year,
   );
-}
 
-fn layout(f: &Frame<'_>) -> (Rect, Rect, Rect, Rect, Rect) {
-  let [header, date, date_time, year] = destruct_layout(
-    &Layout::default()
-      .direction(Direction::Vertical)
-      .constraints([
-        Constraint::Length(2),
-        Constraint::Length(1),
-        Constraint::Length(26),
-        Constraint::Min(5),
-      ])
-      .split(f.size()),
+  f.render_widget(
+    help_paragraph()
+      .style(Style::default().fg(Color::DarkGray))
+      .alignment(Alignment::Center),
+    help,
   );
-
-  let [dates, time] = destruct_layout(
-    &Layout::default()
-      .direction(Direction::Horizontal)
-      .constraints([
-        Constraint::Percentage(72),
-        Constraint::Percentage(28),
-      ])
-      .split(date_time),
-  );
-
-  (header, date, dates, time, year)
-}
-
-fn destruct_layout<const N: usize>(layout: &[Rect]) -> [Rect; N] {
-  let mut i = 0;
-  [0; N].map(|_| {
-    let rect = layout[i];
-    i += 1;
-    rect
-  })
 }
 
 fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
@@ -126,89 +99,84 @@ fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
 }
 
 fn help_paragraph<'a>() -> Paragraph<'a> {
-  Paragraph::new(
-    "Press `s` to add smoke record, `q` to stop running.",
-  )
+  Paragraph::new("`s` - add record, `u` - undo, `q` - quit")
 }
 
-fn time_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
-  let rec_map = app.date_smoke_records().into_iter().fold(
-    HashMap::new(),
-    |mut map, dt| {
-      *map.entry(dt.time().hour()).or_default() += 1;
-      map
-    },
-  );
+fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
+  const HOURS_COUNT: u8 = 24;
+
+  let bar_style = Style::default().fg(Color::Red);
+  let bars: Vec<_> = (0..HOURS_COUNT)
+    .map(|h| {
+      let label = format!("{:0>2}:00", h);
+      let value = state.date_smokes_by_hour.get(&h).map_or(0, |v| *v);
+      Bar::default()
+        .label(Line::raw(label))
+        .value(value as _)
+        .text_value(String::new())
+        .style(bar_style)
+    })
+    .collect();
 
   BarChart::default()
     .direction(Direction::Horizontal)
     .bar_gap(0)
-    .max(2)
-    .data(
-      BarGroup::default().bars(
-        &(0..24)
-          .map(|h| {
-            Bar::default()
-              .label(Line::raw(format!("{:0>2}:00", h)))
-              .value(rec_map.get(&h).copied().unwrap_or_default())
-              .text_value(String::new())
-              .style(Style::default().fg(Color::Red))
-          })
-          .collect::<Vec<_>>(),
-      ),
-    )
+    .max(3)
+    .data(BarGroup::default().bars(&bars))
 }
 
-fn date_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
-  let today = Local::now().date_naive();
-  BarChart::default().bar_width(2).bar_gap(2).data(
-    BarGroup::default().bars(
-      &app
-        .smoke_records_for(today - Days::new(9), today)
-        .map(|(date, recs)| {
-          let color = if date == app.date() {
-            Color::Green
-          } else {
-            Color::Yellow
-          };
+fn date_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
+  let bars: Vec<_> = state
+    .recently_dates_smokes_count
+    .iter()
+    .map(|(date, smokes_count)| {
+      let label = date.format("%d").to_string();
+      let value = *smokes_count;
+      let style = date_style(date, state);
+      Bar::default()
+        .label(Line::styled(label, style))
+        .value(value as _)
+        .style(style)
+    })
+    .collect();
 
-          Bar::default()
-            .label(Line::raw(date.format("%d").to_string()))
-            .value(recs.len() as _)
-            .style(Style::default().fg(color))
-        })
-        .collect::<Vec<_>>(),
-    ),
-  )
+  BarChart::default()
+    .bar_width(2)
+    .bar_gap(2)
+    .data(BarGroup::default().bars(&bars))
 }
 
-fn year_smoke_records_bar_chart(app: &App) -> BarChart<'_> {
+fn date_style(date: &NaiveDate, state: &State) -> Style {
+  Style::default().fg(if date == &state.date {
+    Color::Green
+  } else {
+    Color::Yellow
+  })
+}
+
+fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   let today = Local::now().date_naive();
-  let mut map = app
-    .smoke_records_for(today - Duration::days(365), today)
-    .fold(
-      HashMap::new(),
-      |mut map: HashMap<u8, usize>, (date, recs)| {
-        *map.entry(date.month0() as _).or_default() += recs.len();
-        map
-      },
-    )
-    .into_iter()
-    .collect::<Vec<_>>();
-  map.sort_by_key(|&(m, _)| (m + 11 - today.month0() as u8) % 12);
-  BarChart::default().bar_width(3).bar_gap(1).data(
-    BarGroup::default().bars(
-      &map
-        .into_iter()
-        .map(|(m, count)| {
-          Bar::default()
-            .label(Line::raw(
-              Month::try_from(m + 1).unwrap().name()[0..3]
-                .to_string(),
-            ))
-            .value(count as _)
-        })
-        .collect::<Vec<_>>(),
-    ),
-  )
+  let cur_month = Month::try_from(today.month0() as u8 + 1).unwrap();
+  let past_year = iter_months(cur_month).skip(1).take(12);
+  let bars: Vec<_> = past_year
+    .map(|month| {
+      let label = month.name()[0..3].to_string();
+      let value =
+        state.year_smokes_by_month.get(&month).map_or(0, |v| *v);
+      Bar::default().label(Line::raw(label)).value(value as _)
+    })
+    .collect();
+
+  BarChart::default()
+    .bar_width(3)
+    .bar_gap(1)
+    .data(BarGroup::default().bars(&bars))
+}
+
+fn iter_months(start: Month) -> impl Iterator<Item = Month> {
+  (0..).scan(start, |next, _| {
+    let cur = *next;
+    *next = cur.succ();
+    Some(cur)
+  })
 }

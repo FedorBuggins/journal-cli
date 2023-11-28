@@ -1,65 +1,57 @@
-use std::{
-  sync::mpsc,
-  thread,
-  time::{Duration, Instant},
-};
+use anyhow::{Context, Result};
+use crossterm::event::{EventStream, KeyEvent, KeyEventKind};
+use futures::{FutureExt, StreamExt};
+use tokio::sync::mpsc;
 
-use anyhow::Result;
-use crossterm::event::{self, Event as CrosstermEvent, KeyEvent};
+type CrosstermEvent = crossterm::event::Event;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Event {
-  Tick,
-  Key(KeyEvent),
+  KeyPress(KeyEvent),
+  Resize,
+  Error(String),
 }
 
 #[derive(Debug)]
 pub struct EventHandler {
-  receiver: mpsc::Receiver<Event>,
+  rx: mpsc::UnboundedReceiver<Event>,
 }
 
 impl EventHandler {
-  pub fn new(tick_rate: u64) -> Self {
-    let tick_rate = Duration::from_millis(tick_rate);
-    let (sender, receiver) = mpsc::channel();
+  pub fn new() -> Self {
+    let (tx, rx) = mpsc::unbounded_channel();
 
-    thread::spawn(move || {
-      let mut last_tick = Instant::now();
-
+    tokio::spawn(async move {
+      let mut reader = EventStream::new();
       loop {
-        let timeout = tick_rate
-          .checked_sub(last_tick.elapsed())
-          .unwrap_or(tick_rate);
-
-        if event::poll(timeout).expect("no events available") {
-          match event::read().expect("unable to read event") {
-            CrosstermEvent::Key(e) => {
-              if e.kind == event::KeyEventKind::Press {
-                sender.send(Event::Key(e))
-              } else {
-                Ok(()) // ignore KeyEventKind::Release on windows
-              }
-            }
-            CrosstermEvent::Mouse(_) => Ok(()),
-            CrosstermEvent::Resize(_, _) => Ok(()),
-            _ => unimplemented!(),
-          }
-          .expect("failed to send terminal event")
-        }
-
-        if last_tick.elapsed() >= tick_rate {
-          sender
-            .send(Event::Tick)
-            .expect("failed to send tick event");
-          last_tick = Instant::now();
+        if let Some(event) = reader.next().fuse().await {
+          handle_crossterm_event(event.context("io error"), &tx);
         }
       }
     });
 
-    Self { receiver }
+    Self { rx }
   }
 
-  pub fn next(&self) -> Result<Event> {
-    Ok(self.receiver.recv()?)
+  pub async fn next(&mut self) -> Result<Event> {
+    self.rx.recv().await.context("Unable to get event")
+  }
+}
+
+fn handle_crossterm_event(
+  event: Result<CrosstermEvent>,
+  tx: &mpsc::UnboundedSender<Event>,
+) {
+  match event {
+    Ok(CrosstermEvent::Key(key))
+      if key.kind == KeyEventKind::Press =>
+    {
+      tx.send(Event::KeyPress(key)).unwrap()
+    }
+    Ok(CrosstermEvent::Resize(_, _)) => {
+      tx.send(Event::Resize).unwrap()
+    }
+    Err(error) => tx.send(Event::Error(error.to_string())).unwrap(),
+    _ => (),
   }
 }
