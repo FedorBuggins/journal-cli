@@ -1,4 +1,5 @@
 use std::{
+  env::var,
   fs::{read_to_string, write, OpenOptions},
   io::{self, Write},
   path::Path,
@@ -50,8 +51,8 @@ impl Journal {
 }
 
 fn get_path(date: NaiveDate) -> String {
-  const DATA_FOLDER: &str = "journal";
-  format!("{DATA_FOLDER}/{date}.txt")
+  let home = var("HOME").expect("no $HOME var provided");
+  format!("{home}/.journal/{date}.txt")
 }
 
 fn read_if_exist(path: &str) -> io::Result<Option<String>> {
