@@ -16,8 +16,9 @@ fn handle_key_event(app: &mut App, k_event: KeyEvent) {
   match k_event.code {
     Left => app.prev_date(),
     Right => app.next_date(),
-    Char('s') => app.add_smoke_record(),
+    Char('a') => app.add_smoke_record(),
     Char('u') => app.undo(),
+    Char('U') => app.redo(),
     Esc | Char('q') => app.quit(),
     Char('c' | 'C') if k_event.modifiers == KeyModifiers::CONTROL => {
       app.quit()

@@ -9,11 +9,11 @@ use ratatui::{
 use crate::app::State;
 
 pub fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
-  Paragraph::new(format!("<- {} ->", date.format("%b %-d")))
+  Paragraph::new(format!("<- {} ->", date.format("%B %-d")))
 }
 
 pub fn help_paragraph<'a>() -> Paragraph<'a> {
-  Paragraph::new("`s` - add record, `u` - undo, `q` - quit")
+  Paragraph::new("a - add record, u - undo, U - redo, q - quit")
 }
 
 pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
