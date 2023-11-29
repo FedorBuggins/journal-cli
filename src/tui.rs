@@ -1,3 +1,5 @@
+pub mod event;
+
 use std::{io, panic};
 
 use anyhow::Result;
@@ -6,7 +8,9 @@ use crossterm::{
   terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::{app::App, event::EventHandler, ui};
+use crate::{app::App, ui};
+
+use self::event::EventHandler;
 
 pub type CrosstermTerminal = ratatui::Terminal<
   ratatui::backend::CrosstermBackend<std::io::Stderr>,
