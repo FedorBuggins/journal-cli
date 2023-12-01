@@ -1,12 +1,14 @@
 use chrono::{Datelike, Local, Month, NaiveDate};
 use ratatui::{
   prelude::Direction,
-  style::{Color, Style},
+  style::Style,
   text::Line,
   widgets::{Bar, BarChart, BarGroup, Paragraph},
 };
 
 use crate::app::State;
+
+use super::styles;
 
 pub fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
   Paragraph::new(format!("<- {} ->", date.format("%B %-d")))
@@ -19,16 +21,15 @@ pub fn help_paragraph<'a>() -> Paragraph<'a> {
 pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   const HOURS_COUNT: u8 = 24;
 
-  let bar_style = Style::default().fg(Color::Red);
   let bars: Vec<_> = (0..HOURS_COUNT)
     .map(|h| {
       let label = format!("{:0>2}:00", h);
       let value = state.date_smokes_by_hour.get(&h).map_or(0, |v| *v);
       Bar::default()
-        .label(Line::raw(label))
+        .label(label.into())
         .value(value as _)
         .text_value(String::new())
-        .style(bar_style)
+        .style(styles::RED)
     })
     .collect();
 
@@ -61,11 +62,11 @@ pub fn date_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
 }
 
 fn date_style(date: &NaiveDate, state: &State) -> Style {
-  Style::default().fg(if date == &state.date {
-    Color::Green
+  if date == &state.date {
+    styles::ACCENT
   } else {
-    Color::Yellow
-  })
+    styles::PRIMARY
+  }
 }
 
 pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
@@ -77,7 +78,7 @@ pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
       let label = month.name()[0..3].to_string();
       let value =
         state.year_smokes_by_month.get(&month).map_or(0, |v| *v);
-      Bar::default().label(Line::raw(label)).value(value as _)
+      Bar::default().label(label.into()).value(value as _)
     })
     .collect();
 
