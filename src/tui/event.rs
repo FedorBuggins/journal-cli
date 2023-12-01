@@ -34,7 +34,7 @@ impl EventHandler {
   }
 
   pub async fn next(&mut self) -> Result<Event> {
-    self.rx.recv().await.context("Unable to get event")
+    self.rx.recv().await.context("unable to get event")
   }
 }
 

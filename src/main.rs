@@ -12,9 +12,7 @@ use update::handle_event;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-  let backend = CrosstermBackend::new(std::io::stderr());
-  let terminal = Terminal::new(backend)?;
-  let mut tui = Tui::new(terminal, EventHandler::new());
+  let mut tui = crossterm_tui()?;
   tui.enter()?;
   let err = run(&mut tui).await.err();
   tui.exit()?;
@@ -22,6 +20,11 @@ async fn main() -> Result<()> {
     eprintln!("{err}");
   }
   Ok(())
+}
+
+fn crossterm_tui() -> Result<Tui> {
+  let backend = CrosstermBackend::new(std::io::stderr());
+  Ok(Tui::new(Terminal::new(backend)?, EventHandler::new()))
 }
 
 async fn run(tui: &mut Tui) -> Result<()> {

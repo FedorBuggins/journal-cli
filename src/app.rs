@@ -12,8 +12,8 @@ pub type Hour = u8;
 pub struct App {
   journal: Journal,
   state: State,
-  added_smokes: Vec<DateTime<Local>>,
-  removed_smokes: Vec<DateTime<Local>>,
+  undoes: Vec<DateTime<Local>>,
+  redoes: Vec<DateTime<Local>>,
   should_quit: bool,
 }
 
@@ -30,8 +30,8 @@ impl App {
     Self {
       journal: Journal,
       state: State::default(),
-      added_smokes: Vec::new(),
-      removed_smokes: Vec::new(),
+      undoes: Vec::new(),
+      redoes: Vec::new(),
       should_quit: false,
     }
     .init()
@@ -115,23 +115,23 @@ impl App {
   pub fn add_smoke_record(&mut self) {
     let rec = Local::now();
     self.journal.add(rec).expect("can't add smoke record");
-    self.added_smokes.push(rec);
-    self.removed_smokes = Vec::new();
+    self.undoes.push(rec);
+    self.redoes = Vec::new();
     self.resolve(self.state.date);
   }
 
   pub fn undo(&mut self) {
-    if let Some(rec) = self.added_smokes.pop() {
+    if let Some(rec) = self.undoes.pop() {
       self.journal.remove(rec).expect("can't remove smoke record");
-      self.removed_smokes.push(rec);
+      self.redoes.push(rec);
       self.resolve(self.state.date);
     }
   }
 
   pub fn redo(&mut self) {
-    if let Some(rec) = self.removed_smokes.pop() {
+    if let Some(rec) = self.redoes.pop() {
       self.journal.add(rec).expect("can't remove smoke record");
-      self.added_smokes.push(rec);
+      self.undoes.push(rec);
       self.resolve(self.state.date);
     }
   }
