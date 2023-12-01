@@ -59,7 +59,11 @@ impl App {
       .unwrap_or_default()
       .into_iter()
       .fold(HashMap::new(), |mut map, dt| {
-        *map.entry(dt.time().hour() as _).or_default() += 1;
+        let mut time = dt.time();
+        if time.minute() > 30 {
+          time += Duration::hours(1);
+        }
+        *map.entry(time.hour() as _).or_default() += 1;
         map
       })
   }
