@@ -1,7 +1,6 @@
 use chrono::{Datelike, Local, Month, NaiveDate};
 use ratatui::{
   prelude::Direction,
-  style::Style,
   text::Line,
   widgets::{Bar, BarChart, BarGroup, Paragraph},
 };
@@ -11,7 +10,7 @@ use crate::app::State;
 use super::styles;
 
 pub fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
-  Paragraph::new(format!("<- {} ->", date.format("%B %-d")))
+  Paragraph::new(format!("<- {} ->", date.format("%B %-d, %Y")))
 }
 
 pub fn help_paragraph<'a>() -> Paragraph<'a> {
@@ -44,13 +43,13 @@ pub fn date_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   let bars: Vec<_> = state
     .recently_dates_smokes_count
     .iter()
-    .map(|(date, smokes_count)| {
+    .map(|&(date, smokes_count)| {
+      use styles::*;
       let label = date.format("%d").to_string();
-      let value = *smokes_count;
-      let style = date_style(date, state);
+      let style = if date == state.date { ACCENT } else { PRIMARY };
       Bar::default()
         .label(Line::styled(label, style))
-        .value(value as _)
+        .value(smokes_count as _)
         .style(style)
     })
     .collect();
@@ -58,16 +57,8 @@ pub fn date_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   BarChart::default()
     .bar_width(2)
     .bar_gap(2)
-    .max(15)
+    .max(12)
     .data(BarGroup::default().bars(&bars))
-}
-
-fn date_style(date: &NaiveDate, state: &State) -> Style {
-  if date == &state.date {
-    styles::ACCENT
-  } else {
-    styles::PRIMARY
-  }
 }
 
 pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
@@ -86,6 +77,7 @@ pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   BarChart::default()
     .bar_width(3)
     .bar_gap(1)
+    .max(300)
     .data(BarGroup::default().bars(&bars))
 }
 

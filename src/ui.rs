@@ -15,7 +15,8 @@ use self::layout::Body;
 const CARD: Block<'_> = Block::new()
   .padding(Padding::horizontal(1))
   .borders(Borders::ALL)
-  .border_type(BorderType::Rounded);
+  .border_type(BorderType::Rounded)
+  .border_style(styles::SECONDARY);
 
 pub fn render(state: &State, f: &mut Frame) {
   let Body {
@@ -43,21 +44,21 @@ pub fn render(state: &State, f: &mut Frame) {
 
   f.render_widget(
     widgets::date_smoke_records_bar_chart(state)
-      .block(CARD.title("Days"))
+      .block(CARD.title(st("Days")))
       .style(styles::PRIMARY),
     days,
   );
 
   f.render_widget(
     widgets::time_smoke_records_bar_chart(state)
-      .block(CARD.title("Time"))
+      .block(CARD.title(st("Time")).border_style(styles::ACCENT))
       .style(styles::PRIMARY),
     time,
   );
 
   f.render_widget(
     widgets::year_smoke_records_bar_chart(state)
-      .block(CARD.title("Months").padding(Padding::horizontal(4)))
+      .block(CARD.title(st("Months")).padding(Padding::horizontal(4)))
       .style(styles::PRIMARY),
     year,
   );
@@ -68,4 +69,9 @@ pub fn render(state: &State, f: &mut Frame) {
       .alignment(Alignment::Center),
     help,
   );
+}
+
+/// Style title
+fn st(title: &str) -> String {
+  format!("| {title} |")
 }
