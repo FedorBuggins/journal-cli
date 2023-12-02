@@ -21,9 +21,9 @@ pub struct App {
 #[derive(Default)]
 pub struct State {
   pub date: NaiveDate,
-  pub date_smokes_by_hour: HashMap<Hour, usize>,
-  pub recently_dates_smokes_count: Vec<(NaiveDate, usize)>,
-  pub year_smokes_by_month: HashMap<Month, usize>,
+  pub recs_by_hour: HashMap<Hour, usize>,
+  pub recs_by_date: Vec<(NaiveDate, usize)>,
+  pub recs_by_month: HashMap<Month, usize>,
 }
 
 struct DatesFrame {
@@ -51,24 +51,24 @@ impl App {
   }
 
   fn init(mut self) -> Self {
-    self.resolve();
+    self.resolve_all();
     self
   }
 
-  fn resolve(&mut self) {
+  fn resolve_all(&mut self) {
     self.resolve_dates();
-    self.state.year_smokes_by_month = self.year_smokes_by_month();
+    self.state.recs_by_month = self.recs_by_month();
   }
 
   fn resolve_dates(&mut self) {
     self.state.date = self.dates_frame.cur;
-    self.state.date_smokes_by_hour = self.date_smokes_by_hour();
-    self.state.recently_dates_smokes_count = self
-      .smoke_records_for(self.dates_frame.start, self.dates_frame.end)
+    self.state.recs_by_hour = self.recs_by_hour();
+    self.state.recs_by_date = self
+      .recs_for(self.dates_frame.start, self.dates_frame.end)
       .collect();
   }
 
-  fn date_smokes_by_hour(&self) -> HashMap<Hour, usize> {
+  fn recs_by_hour(&self) -> HashMap<Hour, usize> {
     self
       .journal
       .day_records(self.state.date)
@@ -84,19 +84,20 @@ impl App {
       })
   }
 
-  fn year_smokes_by_month(&self) -> HashMap<Month, usize> {
+  fn recs_by_month(&self) -> HashMap<Month, usize> {
     let today = today();
-    self
-      .smoke_records_for(today - Duration::days(365), today)
-      .fold(HashMap::new(), |mut map, (date, recs_count)| {
+    self.recs_for(today - Duration::days(365), today).fold(
+      HashMap::new(),
+      |mut map, (date, recs_count)| {
         let month = Month::try_from(date.month0() as u8 + 1)
           .expect("invalid month number");
         *map.entry(month).or_default() += recs_count;
         map
-      })
+      },
+    )
   }
 
-  fn smoke_records_for(
+  fn recs_for(
     &self,
     start: NaiveDate,
     end: NaiveDate,
@@ -130,14 +131,14 @@ impl App {
     self.journal.add(rec).expect("can't add smoke record");
     self.undoes.push(rec);
     self.redoes = Vec::new();
-    self.resolve();
+    self.resolve_all();
   }
 
   pub fn undo(&mut self) {
     if let Some(rec) = self.undoes.pop() {
       self.journal.remove(rec).expect("can't remove smoke record");
       self.redoes.push(rec);
-      self.resolve();
+      self.resolve_all();
     }
   }
 
@@ -145,7 +146,7 @@ impl App {
     if let Some(rec) = self.redoes.pop() {
       self.journal.add(rec).expect("can't remove smoke record");
       self.undoes.push(rec);
-      self.resolve();
+      self.resolve_all();
     }
   }
 

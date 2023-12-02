@@ -23,7 +23,7 @@ pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   let bars: Vec<_> = (0..HOURS_COUNT)
     .map(|h| {
       let label = format!("{:0>2}:00", h);
-      let value = state.date_smokes_by_hour.get(&h).map_or(0, |v| *v);
+      let value = state.recs_by_hour.get(&h).map_or(0, |v| *v);
       Bar::default()
         .label(label.into())
         .value(value as _)
@@ -41,7 +41,7 @@ pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
 
 pub fn date_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   let bars: Vec<_> = state
-    .recently_dates_smokes_count
+    .recs_by_date
     .iter()
     .map(|&(date, smokes_count)| {
       use styles::*;
@@ -68,8 +68,7 @@ pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   let bars: Vec<_> = past_year
     .map(|month| {
       let label = month.name()[0..3].to_string();
-      let value =
-        state.year_smokes_by_month.get(&month).map_or(0, |v| *v);
+      let value = state.recs_by_month.get(&month).map_or(0, |v| *v);
       Bar::default().label(label.into()).value(value as _)
     })
     .collect();
