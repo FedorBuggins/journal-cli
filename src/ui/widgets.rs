@@ -58,6 +58,7 @@ pub fn date_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   BarChart::default()
     .bar_width(2)
     .bar_gap(2)
+    .max(15)
     .data(BarGroup::default().bars(&bars))
 }
 

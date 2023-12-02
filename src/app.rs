@@ -14,6 +14,7 @@ pub struct App {
   state: State,
   undoes: Vec<DateTime<Local>>,
   redoes: Vec<DateTime<Local>>,
+  dates_frame: DatesFrame,
   should_quit: bool,
 }
 
@@ -25,31 +26,46 @@ pub struct State {
   pub year_smokes_by_month: HashMap<Month, usize>,
 }
 
+struct DatesFrame {
+  cur: NaiveDate,
+  start: NaiveDate,
+  end: NaiveDate,
+}
+
 impl App {
   pub fn new() -> Self {
+    let today = today();
     Self {
       journal: Journal,
       state: State::default(),
       undoes: Vec::new(),
       redoes: Vec::new(),
+      dates_frame: DatesFrame {
+        cur: today,
+        start: today - Days::new(9),
+        end: today,
+      },
       should_quit: false,
     }
     .init()
   }
 
   fn init(mut self) -> Self {
-    self.resolve(Local::now().date_naive());
+    self.resolve();
     self
   }
 
-  fn resolve(&mut self, date: NaiveDate) {
-    let today = Local::now().date_naive();
-    self.state.date = date;
+  fn resolve(&mut self) {
+    self.resolve_dates();
+    self.state.year_smokes_by_month = self.year_smokes_by_month();
+  }
+
+  fn resolve_dates(&mut self) {
+    self.state.date = self.dates_frame.cur;
     self.state.date_smokes_by_hour = self.date_smokes_by_hour();
     self.state.recently_dates_smokes_count = self
-      .smoke_records_for(today - Days::new(9), today)
+      .smoke_records_for(self.dates_frame.start, self.dates_frame.end)
       .collect();
-    self.state.year_smokes_by_month = self.year_smokes_by_month();
   }
 
   fn date_smokes_by_hour(&self) -> HashMap<Hour, usize> {
@@ -69,8 +85,7 @@ impl App {
   }
 
   fn year_smokes_by_month(&self) -> HashMap<Month, usize> {
-    let today = Local::now().date_naive();
-
+    let today = today();
     self
       .smoke_records_for(today - Duration::days(365), today)
       .fold(HashMap::new(), |mut map, (date, recs_count)| {
@@ -101,19 +116,13 @@ impl App {
   }
 
   pub fn prev_date(&mut self) {
-    self.state.date =
-      self.state.date.pred_opt().expect("can't get previous date");
-    self.state.date_smokes_by_hour = self.date_smokes_by_hour();
+    self.dates_frame.prev();
+    self.resolve_dates();
   }
 
   pub fn next_date(&mut self) {
-    self.state.date = self
-      .state
-      .date
-      .succ_opt()
-      .expect("can't get next date")
-      .min(Local::now().date_naive());
-    self.state.date_smokes_by_hour = self.date_smokes_by_hour();
+    self.dates_frame.next();
+    self.resolve_dates();
   }
 
   pub fn add_smoke_record(&mut self) {
@@ -121,14 +130,14 @@ impl App {
     self.journal.add(rec).expect("can't add smoke record");
     self.undoes.push(rec);
     self.redoes = Vec::new();
-    self.resolve(self.state.date);
+    self.resolve();
   }
 
   pub fn undo(&mut self) {
     if let Some(rec) = self.undoes.pop() {
       self.journal.remove(rec).expect("can't remove smoke record");
       self.redoes.push(rec);
-      self.resolve(self.state.date);
+      self.resolve();
     }
   }
 
@@ -136,7 +145,7 @@ impl App {
     if let Some(rec) = self.redoes.pop() {
       self.journal.add(rec).expect("can't remove smoke record");
       self.undoes.push(rec);
-      self.resolve(self.state.date);
+      self.resolve();
     }
   }
 
@@ -147,4 +156,35 @@ impl App {
   pub fn quit(&mut self) {
     self.should_quit = true;
   }
+}
+
+impl DatesFrame {
+  fn prev(&mut self) {
+    let day = Duration::days(1);
+    self.cur = self.cur.pred_opt().unwrap();
+    if self.cur - self.middle() < -day {
+      self.start -= day;
+      self.end -= day;
+    }
+  }
+
+  fn next(&mut self) {
+    let day = Duration::days(1);
+    let today = today();
+    self.cur = self.cur.succ_opt().unwrap().min(today);
+    if self.cur - self.middle() > day && self.end < today {
+      self.start += day;
+      self.end += day;
+    }
+  }
+
+  fn middle(&self) -> NaiveDate {
+    let days_range =
+      self.end.signed_duration_since(self.start).num_days() as u64;
+    self.end - Days::new(days_range / 2)
+  }
+}
+
+fn today() -> NaiveDate {
+  Local::now().date_naive()
 }
