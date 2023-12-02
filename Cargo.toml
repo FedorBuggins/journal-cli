@@ -1,5 +1,5 @@
 [package]
-name = "smoker-journal"
+name = "journals"
 version = "0.1.0"
 edition = "2021"
 

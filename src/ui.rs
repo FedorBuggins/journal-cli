@@ -5,7 +5,7 @@ mod widgets;
 use ratatui::{
   prelude::{Alignment, Frame},
   style::Stylize,
-  widgets::{Block, BorderType, Borders, Padding, Paragraph},
+  widgets::{Block, BorderType, Borders, Padding},
 };
 
 use crate::app::State;
@@ -20,7 +20,7 @@ const CARD: Block<'_> = Block::new()
 
 pub fn render(state: &State, f: &mut Frame) {
   let Body {
-    title,
+    tabs,
     date,
     days,
     time,
@@ -29,16 +29,16 @@ pub fn render(state: &State, f: &mut Frame) {
   } = Body::new(f.size());
 
   f.render_widget(
-    Paragraph::new("Smoker Journal")
-      .alignment(Alignment::Center)
-      .style(styles::PRIMARY.bold()),
-    title,
+    widgets::tabs(state)
+      .style(styles::PRIMARY)
+      .highlight_style(styles::SECONDARY.bold().underlined()),
+    tabs,
   );
 
   f.render_widget(
     widgets::date_paragraph(state.date)
-      .style(styles::ACCENT.bold())
-      .alignment(Alignment::Center),
+      .style(styles::ACCENT)
+      .alignment(Alignment::Right),
     date,
   );
 
@@ -51,7 +51,7 @@ pub fn render(state: &State, f: &mut Frame) {
 
   f.render_widget(
     widgets::time_smoke_records_bar_chart(state)
-      .block(CARD.title(st("Time")).border_style(styles::ACCENT))
+      .block(CARD.title(st("Time")))
       .style(styles::PRIMARY),
     time,
   );

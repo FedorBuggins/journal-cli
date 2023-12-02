@@ -1,20 +1,34 @@
+use std::cmp::max;
+
 use chrono::{Datelike, Local, Month, NaiveDate};
 use ratatui::{
   prelude::Direction,
   text::Line,
-  widgets::{Bar, BarChart, BarGroup, Paragraph},
+  widgets::{Bar, BarChart, BarGroup, Paragraph, Tabs},
 };
 
 use crate::app::State;
 
 use super::styles;
 
+pub fn tabs(state: &State) -> Tabs<'_> {
+  let titles = state
+    .tabs
+    .iter()
+    .map(|title| format!("[ {title} ]"))
+    .cycle()
+    .skip(state.selected_tab)
+    .take(state.tabs.len())
+    .collect();
+  Tabs::new(titles).divider("").select(0)
+}
+
 pub fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
   Paragraph::new(format!("<- {} ->", date.format("%B %-d, %Y")))
 }
 
 pub fn help_paragraph<'a>() -> Paragraph<'a> {
-  Paragraph::new("a - add record, u - undo, U - redo, q - quit")
+  Paragraph::new("space - add record, u - undo, U - redo, q - quit")
 }
 
 pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
@@ -54,14 +68,27 @@ pub fn date_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
     })
     .collect();
 
+  let max_val = state
+    .recs_by_date
+    .iter()
+    .map(|(_, count)| *count)
+    .max()
+    .unwrap_or(0);
+
   BarChart::default()
     .bar_width(2)
     .bar_gap(2)
-    .max(12)
+    .max(bar_max(max_val as _))
     .data(BarGroup::default().bars(&bars))
 }
 
+fn bar_max(max_val: u64) -> u64 {
+  const INCREASE_PERCENTAGE: u64 = 10;
+  max_val + max(max_val / INCREASE_PERCENTAGE, 1)
+}
+
 pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
+  let max_val = state.recs_by_month.values().max().map_or(0, |v| *v);
   let today = Local::now().date_naive();
   let cur_month = Month::try_from(today.month0() as u8 + 1).unwrap();
   let past_year = iter_months(cur_month).skip(1).take(12);
@@ -76,7 +103,7 @@ pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
   BarChart::default()
     .bar_width(3)
     .bar_gap(1)
-    .max(300)
+    .max(bar_max(max_val as _))
     .data(BarGroup::default().bars(&bars))
 }
 

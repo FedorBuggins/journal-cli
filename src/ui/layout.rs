@@ -1,7 +1,7 @@
 use ratatui::prelude::{Constraint, Direction, Layout, Rect};
 
 pub struct Body {
-  pub title: Rect,
+  pub tabs: Rect,
   pub date: Rect,
   pub days: Rect,
   pub time: Rect,
@@ -11,17 +11,26 @@ pub struct Body {
 
 impl Body {
   pub fn new(size: Rect) -> Self {
-    let [title, date, days_time, year, help] = destruct_layout(
+    let [tabs_date, days_time, year, help] = destruct_layout(
       &Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-          Constraint::Length(1),
           Constraint::Length(1),
           Constraint::Length(26),
           Constraint::Min(5),
           Constraint::Length(1),
         ])
         .split(size),
+    );
+
+    let [tabs, date] = destruct_layout(
+      &Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+          Constraint::Percentage(60),
+          Constraint::Percentage(40),
+        ])
+        .split(tabs_date),
     );
 
     let [days, _, time] = destruct_layout(
@@ -36,7 +45,7 @@ impl Body {
     );
 
     Self {
-      title,
+      tabs,
       date,
       days,
       time,

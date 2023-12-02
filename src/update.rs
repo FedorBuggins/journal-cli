@@ -16,7 +16,8 @@ fn handle_key_event(app: &mut App, k_event: KeyEvent) {
   match k_event.code {
     Left => app.prev_date(),
     Right => app.next_date(),
-    Char('a') => app.add_smoke_record(),
+    Tab => app.next_tab(),
+    Char(' ') => app.add_record(),
     Char('u') => app.undo(),
     Char('U') => app.redo(),
     Esc | Char('q') => app.quit(),

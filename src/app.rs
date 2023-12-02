@@ -1,50 +1,41 @@
-use std::collections::HashMap;
+mod tab;
 
-use chrono::{
-  DateTime, Datelike, Days, Duration, Local, Month, NaiveDate,
-  Timelike,
-};
+use std::{collections::HashMap, path::Path};
+
+use chrono::{Month, NaiveDate};
 
 use crate::journal::Journal;
 
-pub type Hour = u8;
+use self::tab::Tab;
+
+const ROOT: &str = concat!(env!("HOME"), "/.journals");
 
 pub struct App {
-  journal: Journal,
-  state: State,
-  undoes: Vec<DateTime<Local>>,
-  redoes: Vec<DateTime<Local>>,
-  dates_frame: DatesFrame,
+  tabs: Vec<Tab>,
+  selected_tab: usize,
   should_quit: bool,
 }
 
-#[derive(Default)]
 pub struct State {
+  pub tabs: Vec<String>,
+  pub selected_tab: usize,
   pub date: NaiveDate,
-  pub recs_by_hour: HashMap<Hour, usize>,
+  pub recs_by_hour: HashMap<tab::Hour, usize>,
   pub recs_by_date: Vec<(NaiveDate, usize)>,
   pub recs_by_month: HashMap<Month, usize>,
 }
 
-struct DatesFrame {
-  cur: NaiveDate,
-  start: NaiveDate,
-  end: NaiveDate,
-}
-
 impl App {
   pub fn new() -> Self {
-    let today = today();
+    let root = Path::new(ROOT);
+    let trains_journal = Journal::new(root.join("trains"));
+    let smokes_journal = Journal::new(root.join("smokes"));
     Self {
-      journal: Journal,
-      state: State::default(),
-      undoes: Vec::new(),
-      redoes: Vec::new(),
-      dates_frame: DatesFrame {
-        cur: today,
-        start: today - Days::new(9),
-        end: today,
-      },
+      tabs: vec![
+        Tab::new("Trains", trains_journal),
+        Tab::new("Smokes", smokes_journal),
+      ],
+      selected_tab: 0,
       should_quit: false,
     }
     .init()
@@ -56,98 +47,52 @@ impl App {
   }
 
   fn resolve_all(&mut self) {
-    self.resolve_dates();
-    self.state.recs_by_month = self.recs_by_month();
+    self.tab_mut().resolve_all();
   }
 
-  fn resolve_dates(&mut self) {
-    self.state.date = self.dates_frame.cur;
-    self.state.recs_by_hour = self.recs_by_hour();
-    self.state.recs_by_date = self
-      .recs_for(self.dates_frame.start, self.dates_frame.end)
-      .collect();
+  fn tab_mut(&mut self) -> &mut Tab {
+    &mut self.tabs[self.selected_tab]
   }
 
-  fn recs_by_hour(&self) -> HashMap<Hour, usize> {
-    self
-      .journal
-      .day_records(self.state.date)
-      .unwrap_or_default()
-      .into_iter()
-      .fold(HashMap::new(), |mut map, dt| {
-        let mut time = dt.time();
-        if time.minute() > 30 {
-          time += Duration::hours(1);
-        }
-        *map.entry(time.hour() as _).or_default() += 1;
-        map
-      })
+  pub fn state(&self) -> State {
+    let tab_state = self.tab_state().clone();
+    State {
+      tabs: self.tabs.iter().map(|tab| tab.title().clone()).collect(),
+      selected_tab: self.selected_tab,
+      date: tab_state.date,
+      recs_by_hour: tab_state.recs_by_hour,
+      recs_by_date: tab_state.recs_by_date,
+      recs_by_month: tab_state.recs_by_month,
+    }
   }
 
-  fn recs_by_month(&self) -> HashMap<Month, usize> {
-    let today = today();
-    self.recs_for(today - Duration::days(365), today).fold(
-      HashMap::new(),
-      |mut map, (date, recs_count)| {
-        let month = Month::try_from(date.month0() as u8 + 1)
-          .expect("invalid month number");
-        *map.entry(month).or_default() += recs_count;
-        map
-      },
-    )
+  fn tab_state(&self) -> &tab::State {
+    self.tabs[self.selected_tab].state()
   }
 
-  fn recs_for(
-    &self,
-    start: NaiveDate,
-    end: NaiveDate,
-  ) -> impl Iterator<Item = (NaiveDate, usize)> + '_ {
-    start.iter_days().take_while(move |date| date <= &end).map(
-      |date| {
-        (
-          date,
-          self.journal.day_records(date).unwrap_or_default().len(),
-        )
-      },
-    )
-  }
-
-  pub fn state(&self) -> &State {
-    &self.state
-  }
-
-  pub fn prev_date(&mut self) {
-    self.dates_frame.prev();
-    self.resolve_dates();
-  }
-
-  pub fn next_date(&mut self) {
-    self.dates_frame.next();
-    self.resolve_dates();
-  }
-
-  pub fn add_smoke_record(&mut self) {
-    let rec = Local::now();
-    self.journal.add(rec).expect("can't add smoke record");
-    self.undoes.push(rec);
-    self.redoes = Vec::new();
+  pub fn next_tab(&mut self) {
+    self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
     self.resolve_all();
   }
 
+  pub fn prev_date(&mut self) {
+    self.tab_mut().prev_date();
+  }
+
+  pub fn next_date(&mut self) {
+    self.tab_mut().next_date();
+  }
+
+  pub fn add_record(&mut self) {
+    self.tab_mut().add_record();
+  }
+
   pub fn undo(&mut self) {
-    if let Some(rec) = self.undoes.pop() {
-      self.journal.remove(rec).expect("can't remove smoke record");
-      self.redoes.push(rec);
-      self.resolve_all();
-    }
+    self.tab_mut().undo();
   }
 
   pub fn redo(&mut self) {
-    if let Some(rec) = self.redoes.pop() {
-      self.journal.add(rec).expect("can't remove smoke record");
-      self.undoes.push(rec);
-      self.resolve_all();
-    }
+    self.tab_mut().redo();
   }
 
   pub fn should_quit(&self) -> bool {
@@ -157,35 +102,4 @@ impl App {
   pub fn quit(&mut self) {
     self.should_quit = true;
   }
-}
-
-impl DatesFrame {
-  fn prev(&mut self) {
-    let day = Duration::days(1);
-    self.cur = self.cur.pred_opt().unwrap();
-    if self.cur - self.middle() < -day {
-      self.start -= day;
-      self.end -= day;
-    }
-  }
-
-  fn next(&mut self) {
-    let day = Duration::days(1);
-    let today = today();
-    self.cur = self.cur.succ_opt().unwrap().min(today);
-    if self.cur - self.middle() > day && self.end < today {
-      self.start += day;
-      self.end += day;
-    }
-  }
-
-  fn middle(&self) -> NaiveDate {
-    let days_range =
-      self.end.signed_duration_since(self.start).num_days() as u64;
-    self.end - Days::new(days_range / 2)
-  }
-}
-
-fn today() -> NaiveDate {
-  Local::now().date_naive()
 }
