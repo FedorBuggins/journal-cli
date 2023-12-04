@@ -27,8 +27,38 @@ pub fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
   Paragraph::new(format!("<- {} ->", date.format("%B %-d, %Y")))
 }
 
-pub fn help_paragraph<'a>() -> Paragraph<'a> {
-  Paragraph::new("space - add record, u - undo, U - redo, q - quit")
+pub fn date_records_bar_chart(state: &State) -> BarChart<'_> {
+  let bars: Vec<_> = state
+    .recs_by_date
+    .iter()
+    .map(|(date, count)| {
+      use styles::*;
+      let label = date.format("%d").to_string();
+      let style = if date == &state.date { ACCENT } else { PRIMARY };
+      Bar::default()
+        .label(Line::styled(label, style))
+        .value(*count as _)
+        .style(style)
+    })
+    .collect();
+
+  let max_val = state
+    .recs_by_date
+    .iter()
+    .map(|(_, count)| count)
+    .max()
+    .map_or(0, |v| *v);
+
+  BarChart::default()
+    .bar_width(2)
+    .bar_gap(2)
+    .max(bar_max(max_val as _))
+    .data(BarGroup::default().bars(&bars))
+}
+
+fn bar_max(max_val: u64) -> u64 {
+  const INCREASE_PERCENTAGE: u64 = 10;
+  max_val + max(max_val / INCREASE_PERCENTAGE, 1)
 }
 
 pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
@@ -53,42 +83,7 @@ pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
     .data(BarGroup::default().bars(&bars))
 }
 
-pub fn date_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
-  let bars: Vec<_> = state
-    .recs_by_date
-    .iter()
-    .map(|&(date, smokes_count)| {
-      use styles::*;
-      let label = date.format("%d").to_string();
-      let style = if date == state.date { ACCENT } else { PRIMARY };
-      Bar::default()
-        .label(Line::styled(label, style))
-        .value(smokes_count as _)
-        .style(style)
-    })
-    .collect();
-
-  let max_val = state
-    .recs_by_date
-    .iter()
-    .map(|(_, count)| *count)
-    .max()
-    .unwrap_or(0);
-
-  BarChart::default()
-    .bar_width(2)
-    .bar_gap(2)
-    .max(bar_max(max_val as _))
-    .data(BarGroup::default().bars(&bars))
-}
-
-fn bar_max(max_val: u64) -> u64 {
-  const INCREASE_PERCENTAGE: u64 = 10;
-  max_val + max(max_val / INCREASE_PERCENTAGE, 1)
-}
-
 pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
-  let max_val = state.recs_by_month.values().max().map_or(0, |v| *v);
   let today = Local::now().date_naive();
   let cur_month = Month::try_from(today.month0() as u8 + 1).unwrap();
   let past_year = iter_months(cur_month).skip(1).take(12);
@@ -99,6 +94,8 @@ pub fn year_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
       Bar::default().label(label.into()).value(value as _)
     })
     .collect();
+
+  let max_val = state.recs_by_month.values().max().map_or(0, |v| *v);
 
   BarChart::default()
     .bar_width(3)
@@ -113,4 +110,8 @@ fn iter_months(start: Month) -> impl Iterator<Item = Month> {
     *next = cur.succ();
     Some(cur)
   })
+}
+
+pub fn help_paragraph<'a>() -> Paragraph<'a> {
+  Paragraph::new("space - add record, u - undo, U - redo, q - quit")
 }

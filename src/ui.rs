@@ -43,7 +43,7 @@ pub fn render(state: &State, f: &mut Frame) {
   );
 
   f.render_widget(
-    widgets::date_smoke_records_bar_chart(state)
+    widgets::date_records_bar_chart(state)
       .block(CARD.title(st("Days")))
       .style(styles::PRIMARY),
     days,

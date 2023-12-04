@@ -6,13 +6,12 @@ mod update;
 
 use anyhow::Result;
 use app::App;
-use ratatui::prelude::{CrosstermBackend, Terminal};
-use tui::{event::EventHandler, Tui};
+use tui::Tui;
 use update::handle_event;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-  let mut tui = crossterm_tui()?;
+  let mut tui = Tui::try_new()?;
   tui.enter()?;
   let err = run(&mut tui).await.err();
   tui.exit()?;
@@ -22,17 +21,11 @@ async fn main() -> Result<()> {
   Ok(())
 }
 
-fn crossterm_tui() -> Result<Tui> {
-  let backend = CrosstermBackend::new(std::io::stderr());
-  Ok(Tui::new(Terminal::new(backend)?, EventHandler::new()))
-}
-
 async fn run(tui: &mut Tui) -> Result<()> {
   let mut app = App::new();
-  tui.draw(&app)?;
   while !app.should_quit() {
-    handle_event(&mut app, tui.events.next().await?)?;
     tui.draw(&app)?;
+    handle_event(&mut app, tui.event().await?)?;
   }
   Ok(())
 }

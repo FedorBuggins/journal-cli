@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode::*, KeyEvent, KeyModifiers};
 
-use crate::{app::App, tui::event::Event};
+use crate::{app::App, tui::Event};
 
 pub fn handle_event(app: &mut App, event: Event) -> Result<()> {
   match event {
@@ -21,9 +21,11 @@ fn handle_key_event(app: &mut App, k_event: KeyEvent) {
     Char('u') => app.undo(),
     Char('U') => app.redo(),
     Esc | Char('q') => app.quit(),
-    Char('c' | 'C') if k_event.modifiers == KeyModifiers::CONTROL => {
-      app.quit()
-    }
+    Char('c' | 'C') if is_ctrl(k_event) => app.quit(),
     _ => (),
   }
+}
+
+fn is_ctrl(k_event: KeyEvent) -> bool {
+  k_event.modifiers == KeyModifiers::CONTROL
 }

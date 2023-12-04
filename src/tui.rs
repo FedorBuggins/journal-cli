@@ -1,32 +1,38 @@
-pub mod event;
+mod event_listener;
 
 use std::{io, panic};
 
 use anyhow::Result;
 use crossterm::{
-  event::{DisableMouseCapture, EnableMouseCapture},
+  event::{DisableMouseCapture, EnableMouseCapture, KeyEvent},
   terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{app::App, ui};
 
-use self::event::EventHandler;
+use self::event_listener::EventListener;
 
-pub type CrosstermTerminal = ratatui::Terminal<
-  ratatui::backend::CrosstermBackend<std::io::Stderr>,
->;
+type Crossterm = Terminal<CrosstermBackend<io::Stderr>>;
+
+#[derive(Clone, Debug)]
+pub enum Event {
+  KeyPress(KeyEvent),
+  Resize,
+  Error(String),
+}
 
 pub struct Tui {
-  terminal: CrosstermTerminal,
-  pub events: EventHandler,
+  terminal: Crossterm,
+  events: EventListener,
 }
 
 impl Tui {
-  pub fn new(
-    terminal: CrosstermTerminal,
-    events: EventHandler,
-  ) -> Self {
-    Self { terminal, events }
+  pub fn try_new() -> Result<Self> {
+    let backend = CrosstermBackend::new(io::stderr());
+    let terminal = Terminal::new(backend)?;
+    let events = EventListener::new();
+    Ok(Self { terminal, events })
   }
 
   pub fn enter(&mut self) -> Result<()> {
@@ -53,6 +59,10 @@ impl Tui {
       .terminal
       .draw(|frame| ui::render(&app.state(), frame))?;
     Ok(())
+  }
+
+  pub async fn event(&mut self) -> Result<Event> {
+    self.events.next().await
   }
 
   fn reset() -> Result<()> {
