@@ -2,30 +2,52 @@ mod app;
 mod journal;
 mod tui;
 mod ui;
-mod update;
+
+use std::path::Path;
 
 use anyhow::Result;
-use app::App;
-use tui::Tui;
-use update::handle_event;
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::Frame;
+
+use self::{app::App, journal::Journal, tui::Tui};
+
+const ROOT_DIR: &str = concat!(env!("HOME"), "/.journals");
 
 #[tokio::main]
 async fn main() -> Result<()> {
-  let mut tui = Tui::try_new()?;
-  tui.enter()?;
-  let err = run(&mut tui).await.err();
-  tui.exit()?;
-  if let Some(err) = err {
-    eprintln!("{err}");
-  }
-  Ok(())
+  let root_dir = Path::new(ROOT_DIR);
+  let mut app = App::new([
+    ("Trains", Journal::new(root_dir.join("trains"))),
+    ("Smokes", Journal::new(root_dir.join("smokes"))),
+  ]);
+  Tui::try_new()?.launch(&mut app).await
 }
 
-async fn run(tui: &mut Tui) -> Result<()> {
-  let mut app = App::new();
-  while !app.should_quit() {
-    tui.draw(&app)?;
-    handle_event(&mut app, tui.event().await?)?;
+impl tui::App for App {
+  fn render(&self, f: &mut Frame) {
+    ui::render(&self.state(), f)
   }
-  Ok(())
+
+  fn handle_key_event(&mut self, k_event: KeyEvent) {
+    use KeyCode::*;
+
+    match k_event.code {
+      Esc => self.quit(),
+      Tab => self.next_tab(),
+      Left => self.prev_date(),
+      Right => self.next_date(),
+      Char(' ') => self.add_record(),
+      Char('u') => self.undo(),
+      Char('U') => self.redo(),
+      _ => (),
+    }
+  }
+
+  fn should_quit(&self) -> bool {
+    self.should_quit()
+  }
+
+  fn quit(&mut self) {
+    self.quit()
+  }
 }

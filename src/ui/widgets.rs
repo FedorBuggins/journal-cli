@@ -113,5 +113,5 @@ fn iter_months(start: Month) -> impl Iterator<Item = Month> {
 }
 
 pub fn help_paragraph<'a>() -> Paragraph<'a> {
-  Paragraph::new("space - add record, u - undo, U - redo, q - quit")
+  Paragraph::new("SPACE - add record, u - undo, U - redo, ESC - quit")
 }

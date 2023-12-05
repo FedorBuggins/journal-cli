@@ -1,14 +1,12 @@
 mod tab;
 
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
 use chrono::{Month, NaiveDate};
 
 use crate::journal::Journal;
 
 use self::tab::Tab;
-
-const ROOT: &str = concat!(env!("HOME"), "/.journals");
 
 pub struct App {
   tabs: Vec<Tab>,
@@ -26,15 +24,16 @@ pub struct State {
 }
 
 impl App {
-  pub fn new() -> Self {
-    let root = Path::new(ROOT);
-    let trains_journal = Journal::new(root.join("trains"));
-    let smokes_journal = Journal::new(root.join("smokes"));
+  pub fn new<I, S>(journals: I) -> Self
+  where
+    I: IntoIterator<Item = (S, Journal)>,
+    S: ToString,
+  {
     Self {
-      tabs: vec![
-        Tab::new("Trains", trains_journal),
-        Tab::new("Smokes", smokes_journal),
-      ],
+      tabs: journals
+        .into_iter()
+        .map(|(title, journal)| Tab::new(title, journal))
+        .collect(),
       selected_tab: 0,
       should_quit: false,
     }
