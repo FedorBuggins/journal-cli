@@ -1,5 +1,5 @@
 mod app;
-mod journal;
+mod fs_journal;
 mod tui;
 mod ui;
 
@@ -9,16 +9,16 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 
-use self::{app::App, journal::Journal, tui::Tui};
+use self::{app::App, fs_journal::FsJournal, tui::Tui};
 
 const ROOT_DIR: &str = concat!(env!("HOME"), "/.journals");
 
 #[tokio::main]
 async fn main() -> Result<()> {
   let root_dir = Path::new(ROOT_DIR);
-  let mut app = App::try_new([
-    ("Trains", Journal::new(root_dir.join("trains"))),
-    ("Smokes", Journal::new(root_dir.join("smokes"))),
+  let mut app = App::try_new(vec![
+    ("Trains", Box::new(FsJournal::new(root_dir.join("trains")))),
+    ("Smokes", Box::new(FsJournal::new(root_dir.join("smokes")))),
   ])?;
   Tui::try_new()?.launch(&mut app).await
 }

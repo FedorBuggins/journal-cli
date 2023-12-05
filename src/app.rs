@@ -1,13 +1,19 @@
 mod tab;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, io};
 
 use anyhow::Result;
-use chrono::{Month, NaiveDate};
-
-use crate::journal::Journal;
+use chrono::{DateTime, FixedOffset, Local, Month, NaiveDate};
 
 use self::tab::Tab;
+
+pub type DayRecords = Vec<DateTime<FixedOffset>>;
+
+pub trait Journal {
+  fn day_records(&self, date: NaiveDate) -> io::Result<DayRecords>;
+  fn add(&self, dt: DateTime<Local>) -> io::Result<()>;
+  fn remove(&self, dt: DateTime<Local>) -> io::Result<()>;
+}
 
 pub struct App {
   tabs: Vec<Tab>,
@@ -25,9 +31,10 @@ pub struct State {
 }
 
 impl App {
-  pub fn try_new<I, S>(journals: I) -> Result<Self>
+  pub fn try_new<S>(
+    journals: Vec<(S, Box<dyn Journal>)>,
+  ) -> Result<Self>
   where
-    I: IntoIterator<Item = (S, Journal)>,
     S: ToString,
   {
     let tabs =

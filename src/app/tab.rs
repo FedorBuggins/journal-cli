@@ -8,14 +8,14 @@ use chrono::{
   Timelike,
 };
 
-use crate::journal::Journal;
-
 use self::dates_frame::DatesFrame;
+
+use super::Journal;
 
 pub type Hour = u8;
 
 pub struct Tab {
-  journal: Journal,
+  journal: Box<dyn Journal>,
   title: String,
   state: State,
   undoes: Vec<DateTime<Local>>,
@@ -41,7 +41,10 @@ impl State {
 }
 
 impl Tab {
-  pub fn new(title: impl ToString, journal: Journal) -> Self {
+  pub fn new(
+    title: impl ToString,
+    journal: Box<dyn Journal>,
+  ) -> Self {
     let today = Local::now().date_naive();
     Self {
       journal,
