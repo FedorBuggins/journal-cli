@@ -2,6 +2,7 @@ mod dates_frame;
 
 use std::collections::HashMap;
 
+use anyhow::{Context, Result};
 use chrono::{
   DateTime, Datelike, Days, Duration, Local, Month, NaiveDate,
   Timelike,
@@ -56,61 +57,57 @@ impl Tab {
     }
   }
 
-  pub fn resolve_all(&mut self) {
-    self.resolve_dates();
-    self.state.recs_by_month = self.recs_by_month();
+  pub fn resolve_all(&mut self) -> Result<()> {
+    self.resolve_dates()?;
+    self.state.recs_by_month = self.recs_by_month()?;
+    Ok(())
   }
 
-  pub fn resolve_dates(&mut self) {
+  pub fn resolve_dates(&mut self) -> Result<()> {
     self.state.date = self.dates_frame.cur;
-    self.state.recs_by_hour = self.recs_by_hour();
-    self.state.recs_by_date = self
-      .recs_for(self.dates_frame.start, self.dates_frame.end)
-      .collect();
+    self.state.recs_by_hour = self.recs_by_hour()?;
+    self.state.recs_by_date =
+      self.recs_for(self.dates_frame.start, self.dates_frame.end)?;
+    Ok(())
   }
 
-  fn recs_by_hour(&self) -> HashMap<Hour, usize> {
-    self
-      .journal
-      .day_records(self.state.date)
-      .unwrap_or_default()
-      .into_iter()
-      .fold(HashMap::new(), |mut map, dt| {
+  fn recs_by_hour(&self) -> Result<HashMap<Hour, usize>> {
+    Ok(self.journal.day_records(self.state.date)?.into_iter().fold(
+      HashMap::new(),
+      |mut map, dt| {
         let mut time = dt.time();
         if time.minute() >= 50 && time.hour() < 23 {
           time += Duration::hours(1);
         }
         *map.entry(time.hour() as _).or_default() += 1;
         map
-      })
+      },
+    ))
   }
 
-  fn recs_by_month(&self) -> HashMap<Month, usize> {
+  fn recs_by_month(&self) -> Result<HashMap<Month, usize>> {
     let today = Local::now().date_naive();
-    self.recs_for(today - Duration::days(365), today).fold(
-      HashMap::new(),
-      |mut map, (date, recs_count)| {
+    self
+      .recs_for(today - Duration::days(365), today)?
+      .into_iter()
+      .try_fold(HashMap::new(), |mut map, (date, recs_count)| {
         let month = Month::try_from(date.month0() as u8 + 1)
-          .expect("invalid month number");
+          .context("invalid month")?;
         *map.entry(month).or_default() += recs_count;
-        map
-      },
-    )
+        Ok(map)
+      })
   }
 
   fn recs_for(
     &self,
     start: NaiveDate,
     end: NaiveDate,
-  ) -> impl Iterator<Item = (NaiveDate, usize)> + '_ {
-    start.iter_days().take_while(move |date| date <= &end).map(
-      |date| {
-        (
-          date,
-          self.journal.day_records(date).unwrap_or_default().len(),
-        )
-      },
-    )
+  ) -> Result<Vec<(NaiveDate, usize)>> {
+    start
+      .iter_days()
+      .take_while(move |date| date <= &end)
+      .map(|date| Ok((date, self.journal.day_records(date)?.len())))
+      .collect()
   }
 
   pub fn title(&self) -> &String {
@@ -121,38 +118,43 @@ impl Tab {
     &self.state
   }
 
-  pub fn prev_date(&mut self) {
+  pub fn prev_date(&mut self) -> Result<()> {
     self.dates_frame.prev();
-    self.resolve_dates();
+    self.resolve_dates()?;
+    Ok(())
   }
 
-  pub fn next_date(&mut self) {
+  pub fn next_date(&mut self) -> Result<()> {
     self.dates_frame.next();
-    self.resolve_dates();
+    self.resolve_dates()?;
+    Ok(())
   }
 
-  pub fn add_record(&mut self) {
+  pub fn add_record(&mut self) -> Result<()> {
     let rec = Local::now();
-    self.journal.add(rec).expect("can't add smoke record");
+    self.journal.add(rec)?;
     self.undoes.push(rec);
     self.redoes = vec![];
-    self.resolve_all();
+    self.resolve_all()?;
+    Ok(())
   }
 
-  pub fn undo(&mut self) {
+  pub fn undo(&mut self) -> Result<()> {
     if let Some(rec) = self.undoes.pop() {
-      self.journal.remove(rec).expect("can't remove smoke record");
+      self.journal.remove(rec)?;
       self.redoes.push(rec);
-      self.resolve_all();
+      self.resolve_all()?;
     }
+    Ok(())
   }
 
-  pub fn redo(&mut self) {
+  pub fn redo(&mut self) -> Result<()> {
     if let Some(rec) = self.redoes.pop() {
-      self.journal.add(rec).expect("can't remove smoke record");
+      self.journal.add(rec)?;
       self.undoes.push(rec);
-      self.resolve_all();
+      self.resolve_all()?;
     }
+    Ok(())
   }
 }
 

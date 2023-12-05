@@ -25,7 +25,7 @@ pub enum Event {
 
 pub trait App {
   fn render(&self, f: &mut Frame);
-  fn handle_key_event(&mut self, k_event: KeyEvent);
+  fn handle_key_event(&mut self, k_event: KeyEvent) -> Result<()>;
   fn should_quit(&self) -> bool;
   fn quit(&mut self);
 }
@@ -90,7 +90,7 @@ impl Tui {
         Event::Error(error) => return Err(anyhow::anyhow!(error)),
         Event::KeyPress(k_event) => match k_event.code {
           KeyCode::Char('c' | 'C') if is_ctrl(k_event) => app.quit(),
-          _ => app.handle_key_event(k_event),
+          _ => app.handle_key_event(k_event)?,
         },
       }
     }

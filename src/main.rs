@@ -16,10 +16,10 @@ const ROOT_DIR: &str = concat!(env!("HOME"), "/.journals");
 #[tokio::main]
 async fn main() -> Result<()> {
   let root_dir = Path::new(ROOT_DIR);
-  let mut app = App::new([
+  let mut app = App::try_new([
     ("Trains", Journal::new(root_dir.join("trains"))),
     ("Smokes", Journal::new(root_dir.join("smokes"))),
-  ]);
+  ])?;
   Tui::try_new()?.launch(&mut app).await
 }
 
@@ -28,19 +28,20 @@ impl tui::App for App {
     ui::render(&self.state(), f)
   }
 
-  fn handle_key_event(&mut self, k_event: KeyEvent) {
+  fn handle_key_event(&mut self, k_event: KeyEvent) -> Result<()> {
     use KeyCode::*;
 
     match k_event.code {
       Esc => self.quit(),
-      Tab => self.next_tab(),
-      Left => self.prev_date(),
-      Right => self.next_date(),
-      Char(' ') => self.add_record(),
-      Char('u') => self.undo(),
-      Char('U') => self.redo(),
+      Tab => self.next_tab()?,
+      Left => self.prev_date()?,
+      Right => self.next_date()?,
+      Char(' ') => self.add_record()?,
+      Char('u') => self.undo()?,
+      Char('U') => self.redo()?,
       _ => (),
     }
+    Ok(())
   }
 
   fn should_quit(&self) -> bool {

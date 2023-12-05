@@ -2,6 +2,7 @@ mod tab;
 
 use std::collections::HashMap;
 
+use anyhow::Result;
 use chrono::{Month, NaiveDate};
 
 use crate::journal::Journal;
@@ -24,29 +25,20 @@ pub struct State {
 }
 
 impl App {
-  pub fn new<I, S>(journals: I) -> Self
+  pub fn try_new<I, S>(journals: I) -> Result<Self>
   where
     I: IntoIterator<Item = (S, Journal)>,
     S: ToString,
   {
-    Self {
-      tabs: journals
-        .into_iter()
-        .map(|(title, journal)| Tab::new(title, journal))
-        .collect(),
+    let tabs =
+      journals.into_iter().map(|(t, j)| Tab::new(t, j)).collect();
+    let mut app = Self {
+      tabs,
       selected_tab: 0,
       should_quit: false,
-    }
-    .init()
-  }
-
-  fn init(mut self) -> Self {
-    self.resolve_all();
-    self
-  }
-
-  fn resolve_all(&mut self) {
-    self.tab_mut().resolve_all();
+    };
+    app.tab_mut().resolve_all()?;
+    Ok(app)
   }
 
   fn tab_mut(&mut self) -> &mut Tab {
@@ -69,29 +61,30 @@ impl App {
     self.tabs[self.selected_tab].state()
   }
 
-  pub fn next_tab(&mut self) {
+  pub fn next_tab(&mut self) -> Result<()> {
     self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
-    self.resolve_all();
+    self.tab_mut().resolve_all()?;
+    Ok(())
   }
 
-  pub fn prev_date(&mut self) {
-    self.tab_mut().prev_date();
+  pub fn prev_date(&mut self) -> Result<()> {
+    self.tab_mut().prev_date()
   }
 
-  pub fn next_date(&mut self) {
-    self.tab_mut().next_date();
+  pub fn next_date(&mut self) -> Result<()> {
+    self.tab_mut().next_date()
   }
 
-  pub fn add_record(&mut self) {
-    self.tab_mut().add_record();
+  pub fn add_record(&mut self) -> Result<()> {
+    self.tab_mut().add_record()
   }
 
-  pub fn undo(&mut self) {
-    self.tab_mut().undo();
+  pub fn undo(&mut self) -> Result<()> {
+    self.tab_mut().undo()
   }
 
-  pub fn redo(&mut self) {
-    self.tab_mut().redo();
+  pub fn redo(&mut self) -> Result<()> {
+    self.tab_mut().redo()
   }
 
   pub fn should_quit(&self) -> bool {
