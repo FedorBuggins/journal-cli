@@ -1,10 +1,13 @@
 use std::cmp::max;
 
-use chrono::{Datelike, Local, Month, NaiveDate};
+use chrono::{Datelike, Local, Month, NaiveDate, Timelike};
 use ratatui::{
   prelude::Direction,
+  style::Stylize,
   text::Line,
-  widgets::{Bar, BarChart, BarGroup, Paragraph, Tabs},
+  widgets::{
+    Bar, BarChart, BarGroup, List, ListItem, Paragraph, Tabs,
+  },
 };
 
 use crate::app::State;
@@ -16,15 +19,29 @@ pub fn tabs(state: &State) -> Tabs<'_> {
     .tabs
     .iter()
     .map(|title| format!("[ {title} ]"))
-    .cycle()
-    .skip(state.selected_tab)
-    .take(state.tabs.len())
     .collect();
-  Tabs::new(titles).divider("").select(0)
+  Tabs::new(titles).divider("").select(state.tabs.selected())
 }
 
 pub fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
-  Paragraph::new(format!("<- {} ->", date.format("%B %-d, %Y")))
+  Paragraph::new(format!("<- {} ->", date.format("%a, %-d %b %Y")))
+}
+
+pub fn record_list(state: &State) -> List<'_> {
+  let items: Vec<_> = state
+    .list
+    .iter()
+    .enumerate()
+    .map(|(i, dt)| {
+      let text = format!("{}) {}", i + 1, dt.format("%R"));
+      ListItem::new(text).style(if i == state.list.selected() {
+        styles::ACCENT.reversed()
+      } else {
+        styles::PRIMARY
+      })
+    })
+    .collect();
+  List::new(items)
 }
 
 pub fn date_records_bar_chart(state: &State) -> BarChart<'_> {
@@ -72,7 +89,17 @@ pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
         .label(label.into())
         .value(value as _)
         .text_value(String::new())
-        .style(styles::RED)
+        .style(
+          if state
+            .list
+            .selected_item()
+            .is_some_and(|dt| h == dt.time().hour() as _)
+          {
+            styles::ACCENT
+          } else {
+            styles::RED
+          },
+        )
     })
     .collect();
 

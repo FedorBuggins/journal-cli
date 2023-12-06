@@ -34,9 +34,12 @@ impl tui::App for App {
     match k_event.code {
       Esc => self.quit(),
       Tab => self.next_tab()?,
+      Up => self.prev_record()?,
+      Down => self.next_record()?,
       Left => self.prev_date()?,
       Right => self.next_date()?,
       Char(' ') => self.add_record()?,
+      Backspace => self.delete_selected_record()?,
       Char('u') => self.undo()?,
       Char('U') => self.redo()?,
       _ => (),

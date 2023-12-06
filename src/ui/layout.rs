@@ -3,6 +3,7 @@ use ratatui::prelude::{Constraint, Direction, Layout, Rect};
 pub struct Body {
   pub tabs: Rect,
   pub date: Rect,
+  pub list: Rect,
   pub days: Rect,
   pub time: Rect,
   pub year: Rect,
@@ -11,11 +12,11 @@ pub struct Body {
 
 impl Body {
   pub fn new(size: Rect) -> Self {
-    let [tabs_date, days_time, year, help] = destruct_layout(
+    let [tabs, date_list_days_time, year, help] = destruct_layout(
       &Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-          Constraint::Length(1),
+          Constraint::Length(2),
           Constraint::Length(26),
           Constraint::Min(5),
           Constraint::Length(1),
@@ -23,17 +24,7 @@ impl Body {
         .split(size),
     );
 
-    let [tabs, date] = destruct_layout(
-      &Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-          Constraint::Percentage(60),
-          Constraint::Percentage(40),
-        ])
-        .split(tabs_date),
-    );
-
-    let [days, _, time] = destruct_layout(
+    let [date_list_days, _, time] = destruct_layout(
       &Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -41,12 +32,24 @@ impl Body {
           Constraint::Length(1),
           Constraint::Min(10),
         ])
-        .split(days_time),
+        .split(date_list_days_time),
+    );
+
+    let [date, list, days] = destruct_layout(
+      &Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+          Constraint::Length(1),
+          Constraint::Percentage(50),
+          Constraint::Percentage(50),
+        ])
+        .split(date_list_days),
     );
 
     Self {
       tabs,
       date,
+      list,
       days,
       time,
       year,

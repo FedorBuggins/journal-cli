@@ -1,6 +1,6 @@
 use std::{
-  fs::{read_to_string, write, OpenOptions},
-  io::{self, Write},
+  fs::{read_to_string, write},
+  io,
   path::{Path, PathBuf},
 };
 
@@ -35,12 +35,16 @@ impl Journal for FsJournal {
   }
 
   fn add(&self, dt: DateTime<Local>) -> io::Result<()> {
-    let date = dt.date_naive();
-    let mut day_journal = OpenOptions::new()
-      .create(true)
-      .append(true)
-      .open(self.path(date))?;
-    day_journal.write_all((dt.to_rfc3339() + "\n").as_bytes())?;
+    let mut recs = self.day_records(dt.date_naive())?;
+    recs.push(dt.fixed_offset());
+    recs.sort_unstable();
+    write(
+      self.path(dt.date_naive()),
+      recs
+        .into_iter()
+        .map(|dt| dt.to_rfc3339() + "\n")
+        .collect::<String>(),
+    )?;
     Ok(())
   }
 

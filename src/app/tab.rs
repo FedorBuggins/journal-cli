@@ -1,8 +1,8 @@
 mod dates_frame;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Not};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Ok, Result};
 use chrono::{
   DateTime, Datelike, Days, Duration, Local, Month, NaiveDate,
   Timelike,
@@ -10,7 +10,7 @@ use chrono::{
 
 use self::dates_frame::DatesFrame;
 
-use super::Journal;
+use super::{Journal, SelectableList};
 
 pub type Hour = u8;
 
@@ -18,14 +18,15 @@ pub struct Tab {
   journal: Box<dyn Journal>,
   title: String,
   state: State,
-  undoes: Vec<DateTime<Local>>,
-  redoes: Vec<DateTime<Local>>,
+  undoes: Vec<Action>,
+  redoes: Vec<Action>,
   dates_frame: DatesFrame,
 }
 
 #[derive(Default, Clone)]
 pub struct State {
   pub date: NaiveDate,
+  pub list: SelectableList<DateTime<Local>>,
   pub recs_by_hour: HashMap<Hour, usize>,
   pub recs_by_date: Vec<(NaiveDate, usize)>,
   pub recs_by_month: HashMap<Month, usize>,
@@ -36,6 +37,22 @@ impl State {
     Self {
       date,
       ..Default::default()
+    }
+  }
+}
+
+enum Action {
+  Add(DateTime<Local>),
+  Delete(DateTime<Local>),
+}
+
+impl Not for Action {
+  type Output = Self;
+
+  fn not(self) -> Self::Output {
+    match self {
+      Action::Add(dt) => Action::Delete(dt),
+      Action::Delete(dt) => Action::Add(dt),
     }
   }
 }
@@ -68,9 +85,20 @@ impl Tab {
 
   pub fn resolve_dates(&mut self) -> Result<()> {
     self.state.date = self.dates_frame.cur;
+    self.resolve_list()?;
     self.state.recs_by_hour = self.recs_by_hour()?;
     self.state.recs_by_date =
       self.recs_for(self.dates_frame.start, self.dates_frame.end)?;
+    Ok(())
+  }
+
+  fn resolve_list(&mut self) -> Result<(), anyhow::Error> {
+    *self.state.list = self
+      .journal
+      .day_records(self.state.date)?
+      .into_iter()
+      .map(|dt| dt.with_timezone(&Local))
+      .collect();
     Ok(())
   }
 
@@ -78,11 +106,7 @@ impl Tab {
     Ok(self.journal.day_records(self.state.date)?.into_iter().fold(
       HashMap::new(),
       |mut map, dt| {
-        let mut time = dt.time();
-        if time.minute() >= 50 && time.hour() < 23 {
-          time += Duration::hours(1);
-        }
-        *map.entry(time.hour() as _).or_default() += 1;
+        *map.entry(dt.time().hour() as _).or_default() += 1;
         map
       },
     ))
@@ -133,28 +157,57 @@ impl Tab {
     Ok(())
   }
 
+  pub fn prev_record(&mut self) -> Result<()> {
+    self.state.list.select_prev();
+    Ok(())
+  }
+
+  pub fn next_record(&mut self) -> Result<()> {
+    self.state.list.select_next();
+    Ok(())
+  }
+
   pub fn add_record(&mut self) -> Result<()> {
     let rec = Local::now();
     self.journal.add(rec)?;
-    self.undoes.push(rec);
-    self.redoes = vec![];
+    self.undoes.push(Action::Delete(rec));
+    self.redoes.clear();
     self.resolve_all()?;
     Ok(())
   }
 
-  pub fn undo(&mut self) -> Result<()> {
-    if let Some(rec) = self.undoes.pop() {
-      self.journal.remove(rec)?;
-      self.redoes.push(rec);
+  pub fn delete_selected_record(&mut self) -> Result<()> {
+    if let Some(selected_rec) = self.state.list.selected_item() {
+      let dt = selected_rec.with_timezone(&Local);
+      self.journal.remove(dt)?;
+      self.undoes.push(Action::Add(dt));
+      self.redoes.clear();
       self.resolve_all()?;
     }
     Ok(())
   }
 
+  pub fn undo(&mut self) -> Result<()> {
+    if let Some(action) = self.undoes.pop() {
+      self.execute(&action)?;
+      self.redoes.push(!action);
+      self.resolve_all()?;
+    }
+    Ok(())
+  }
+
+  fn execute(&mut self, action: &Action) -> Result<()> {
+    match *action {
+      Action::Add(rec) => self.journal.add(rec)?,
+      Action::Delete(rec) => self.journal.remove(rec)?,
+    }
+    Ok(())
+  }
+
   pub fn redo(&mut self) -> Result<()> {
-    if let Some(rec) = self.redoes.pop() {
-      self.journal.add(rec)?;
-      self.undoes.push(rec);
+    if let Some(action) = self.redoes.pop() {
+      self.execute(&action)?;
+      self.undoes.push(!action);
       self.resolve_all()?;
     }
     Ok(())

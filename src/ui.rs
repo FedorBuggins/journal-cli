@@ -22,10 +22,12 @@ pub fn render(state: &State, f: &mut Frame) {
   let Body {
     tabs,
     date,
+    list,
     days,
     time,
     year,
     help,
+    ..
   } = Body::new(f.size());
 
   f.render_widget(
@@ -36,10 +38,15 @@ pub fn render(state: &State, f: &mut Frame) {
   );
 
   f.render_widget(
-    widgets::date_paragraph(state.date)
-      .style(styles::ACCENT)
-      .alignment(Alignment::Right),
+    widgets::date_paragraph(state.date).style(styles::ACCENT),
     date,
+  );
+
+  f.render_widget(
+    widgets::record_list(state)
+      .block(CARD)
+      .style(styles::PRIMARY),
+    list,
   );
 
   f.render_widget(
