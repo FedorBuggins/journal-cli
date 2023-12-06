@@ -1,18 +1,19 @@
 use std::cmp::max;
 
-use chrono::{Datelike, Local, Month, NaiveDate, Timelike};
+use chrono::{Datelike, Local, Month, NaiveDate, Timelike, Weekday};
 use ratatui::{
-  prelude::Direction,
-  style::Stylize,
-  text::Line,
+  prelude::{Buffer, Constraint, Direction, Rect},
+  style::{Color, Stylize},
+  text::{Line, Span},
   widgets::{
-    Bar, BarChart, BarGroup, List, ListItem, Paragraph, Tabs,
+    Bar, BarChart, BarGroup, Block, List, ListItem, Paragraph, Tabs,
+    Widget,
   },
 };
 
 use crate::app::State;
 
-use super::styles;
+use super::{layout, styles};
 
 pub fn tabs(state: &State) -> Tabs<'_> {
   let titles = state
@@ -24,7 +25,7 @@ pub fn tabs(state: &State) -> Tabs<'_> {
 }
 
 pub fn date_paragraph<'a>(date: NaiveDate) -> Paragraph<'a> {
-  Paragraph::new(format!("<- {} ->", date.format("%a, %-d %b %Y")))
+  Paragraph::new(format!("< {} >", date.format("%a, %-d %b %Y")))
 }
 
 pub fn record_list(state: &State) -> List<'_> {
@@ -44,33 +45,131 @@ pub fn record_list(state: &State) -> List<'_> {
   List::new(items)
 }
 
-pub fn date_records_bar_chart(state: &State) -> BarChart<'_> {
-  let bars: Vec<_> = state
-    .recs_by_date
-    .iter()
-    .map(|(date, count)| {
-      use styles::*;
-      let label = date.format("%d").to_string();
-      let style = if date == &state.date { ACCENT } else { PRIMARY };
-      Bar::default()
-        .label(Line::styled(label, style))
-        .value(*count as _)
-        .style(style)
-    })
-    .collect();
-
-  let max_val = state
-    .recs_by_date
-    .iter()
-    .map(|(_, count)| count)
-    .max()
-    .map_or(0, |v| *v);
-
+pub fn level_bar(state: &State) -> BarChart<'_> {
+  let percentage = state.level.percentage;
+  let level = (percentage * 100.).round() as _;
+  let count = state.level.count();
+  let target = state.level.target();
   BarChart::default()
-    .bar_width(2)
-    .bar_gap(2)
-    .max(bar_max(max_val as _))
-    .data(BarGroup::default().bars(&bars))
+    .bar_width(13)
+    .max(bar_max(max(level, 100)))
+    .data(
+      BarGroup::default().bars(&[Bar::default()
+        .value(level)
+        .text_value(format!("{count}/{target} ({level}%)"))]),
+    )
+    .bar_style(styles::RED.fg(level_color(percentage)))
+}
+
+fn level_color(percentage: f32) -> Color {
+  const RGB_MAX: f32 = u8::MAX as f32;
+  const K: f32 = 2.5;
+  Color::Rgb(
+    (RGB_MAX * percentage * K) as _,
+    (RGB_MAX * (1. - percentage.powf(K))) as _,
+    (RGB_MAX * (1. - percentage * K)) as _,
+  )
+}
+
+pub struct DaysBarChart<'a> {
+  state: &'a State,
+  block: Option<Block<'a>>,
+}
+
+impl<'a> DaysBarChart<'a> {
+  const GAP: u16 = 2;
+
+  pub fn new(state: &'a State) -> Self {
+    Self { state, block: None }
+  }
+
+  pub fn block(mut self, block: Block<'a>) -> Self {
+    self.block = Some(block);
+    self
+  }
+
+  fn render_block(&mut self, area: &mut Rect, buf: &mut Buffer) {
+    if let Some(block) = self.block.take() {
+      let inner = block.inner(*area);
+      block.render(*area, buf);
+      *area = inner;
+    }
+  }
+
+  fn bar_chart(&self) -> BarChart<'a> {
+    let bars: Vec<_> = self
+      .state
+      .recs_by_date
+      .iter()
+      .map(|(date, count)| {
+        let label = date.format("%e").to_string();
+        if date == &self.state.date {
+          Bar::default()
+            .label(Line::styled(label, styles::ACCENT))
+            .value(*count as _)
+            .style(styles::ACCENT)
+        } else {
+          Bar::default()
+            .label(Line::styled(label, styles::PRIMARY))
+            .value(*count as _)
+            .style(styles::PRIMARY.fg(level_color(
+              *count as f32 / self.state.level.middle,
+            )))
+        }
+      })
+      .collect();
+
+    let max_val = self
+      .state
+      .recs_by_date
+      .iter()
+      .map(|(_, count)| count)
+      .max()
+      .map_or(0, |v| *v);
+
+    BarChart::default()
+      .bar_width(2)
+      .bar_gap(Self::GAP)
+      .max(bar_max(max_val as _))
+      .data(BarGroup::default().bars(&bars))
+  }
+
+  fn weekdays_paragraph(&self) -> Paragraph<'a> {
+    let space = " ".repeat(Self::GAP as _);
+    let weekdays: Vec<_> = self
+      .state
+      .recs_by_date
+      .iter()
+      .map(|(date, _)| {
+        let weekday = weekday(date);
+        let weekday_symbols = &weekday.to_string()[..2];
+        let style = if date == &self.state.date {
+          styles::ACCENT
+        } else if weekday == Weekday::Sun {
+          styles::RED
+        } else {
+          styles::PRIMARY
+        };
+        Span::styled(format!("{weekday_symbols}{space}"), style)
+      })
+      .collect();
+    Paragraph::new(Line::from(weekdays))
+  }
+}
+
+impl<'a> Widget for DaysBarChart<'a> {
+  fn render(mut self, mut area: Rect, buf: &mut Buffer) {
+    use Constraint::*;
+
+    self.render_block(&mut area, buf);
+    let [chart, weekdays] = layout::vsplit([Min(5), Length(1)], area);
+    self.bar_chart().render(chart, buf);
+    self.weekdays_paragraph().render(weekdays, buf);
+  }
+}
+
+fn weekday(date: &NaiveDate) -> Weekday {
+  date.and_time(Default::default()).weekday()
 }
 
 fn bar_max(max_val: u64) -> u64 {

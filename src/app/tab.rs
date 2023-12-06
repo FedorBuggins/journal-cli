@@ -10,7 +10,7 @@ use chrono::{
 
 use self::dates_frame::DatesFrame;
 
-use super::{Journal, SelectableList};
+use super::{Journal, Level, SelectableList};
 
 pub type Hour = u8;
 
@@ -27,6 +27,7 @@ pub struct Tab {
 pub struct State {
   pub date: NaiveDate,
   pub list: SelectableList<DateTime<Local>>,
+  pub level: Level,
   pub recs_by_hour: HashMap<Hour, usize>,
   pub recs_by_date: Vec<(NaiveDate, usize)>,
   pub recs_by_month: HashMap<Month, usize>,
@@ -36,6 +37,7 @@ impl State {
   fn new(date: NaiveDate) -> Self {
     Self {
       date,
+      list: SelectableList::default().with_reversed_selection(),
       ..Default::default()
     }
   }
@@ -85,20 +87,11 @@ impl Tab {
 
   pub fn resolve_dates(&mut self) -> Result<()> {
     self.state.date = self.dates_frame.cur;
-    self.resolve_list()?;
+    *self.state.list = self.journal.day_records(self.state.date)?;
+    self.state.level = self.level()?;
     self.state.recs_by_hour = self.recs_by_hour()?;
     self.state.recs_by_date =
       self.recs_for(self.dates_frame.start, self.dates_frame.end)?;
-    Ok(())
-  }
-
-  fn resolve_list(&mut self) -> Result<(), anyhow::Error> {
-    *self.state.list = self
-      .journal
-      .day_records(self.state.date)?
-      .into_iter()
-      .map(|dt| dt.with_timezone(&Local))
-      .collect();
     Ok(())
   }
 
@@ -137,6 +130,24 @@ impl Tab {
       .collect()
   }
 
+  fn level(&self) -> Result<Level> {
+    let today = Local::now().date_naive();
+    let date_count =
+      self.journal.day_records(self.state.date)?.len() as f32;
+    let recent_days =
+      self.recs_for(today - Days::new(10), today - Days::new(1))?;
+    let sum: f32 =
+      recent_days.iter().map(|(_, recs)| *recs as f32).sum();
+    let count =
+      recent_days.iter().filter(|(_, count)| count != &0).count();
+    let middle = if count == 0 {
+      date_count
+    } else {
+      sum / count as f32
+    };
+    Ok(Level::new(date_count / middle, middle))
+  }
+
   pub fn title(&self) -> &String {
     &self.title
   }
@@ -172,7 +183,14 @@ impl Tab {
     self.journal.add(rec)?;
     self.undoes.push(Action::Delete(rec));
     self.redoes.clear();
+    self.resolve_all_preserve_list_selection()?;
+    Ok(())
+  }
+
+  fn resolve_all_preserve_list_selection(&mut self) -> Result<()> {
+    // let selected = self.state.list.selected();
     self.resolve_all()?;
+    // self.state.list.select(selected);
     Ok(())
   }
 
@@ -182,7 +200,7 @@ impl Tab {
       self.journal.remove(dt)?;
       self.undoes.push(Action::Add(dt));
       self.redoes.clear();
-      self.resolve_all()?;
+      self.resolve_all_preserve_list_selection()?;
     }
     Ok(())
   }
@@ -191,7 +209,7 @@ impl Tab {
     if let Some(action) = self.undoes.pop() {
       self.execute(&action)?;
       self.redoes.push(!action);
-      self.resolve_all()?;
+      self.resolve_all_preserve_list_selection()?;
     }
     Ok(())
   }
@@ -208,7 +226,7 @@ impl Tab {
     if let Some(action) = self.redoes.pop() {
       self.execute(&action)?;
       self.undoes.push(!action);
-      self.resolve_all()?;
+      self.resolve_all_preserve_list_selection()?;
     }
     Ok(())
   }

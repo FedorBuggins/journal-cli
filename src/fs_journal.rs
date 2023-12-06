@@ -1,14 +1,12 @@
 use std::{
-  fs::{read_to_string, write},
+  fs::{create_dir_all, read_to_string, write},
   io,
   path::{Path, PathBuf},
 };
 
-use chrono::{DateTime, FixedOffset, Local, NaiveDate, ParseError};
+use chrono::{DateTime, Local, NaiveDate, ParseError};
 
-use crate::app::Journal;
-
-pub type DayRecords = Vec<DateTime<FixedOffset>>;
+use crate::app::{DayRecords, Journal};
 
 pub struct FsJournal {
   dir: PathBuf,
@@ -30,14 +28,16 @@ impl Journal for FsJournal {
       .unwrap_or_default()
       .lines()
       .map(DateTime::parse_from_rfc3339)
+      .map(|dt| dt.map(|dt| dt.with_timezone(&Local)))
       .collect::<Result<_, _>>()
       .map_err(to_io_error)
   }
 
   fn add(&self, dt: DateTime<Local>) -> io::Result<()> {
     let mut recs = self.day_records(dt.date_naive())?;
-    recs.push(dt.fixed_offset());
+    recs.push(dt);
     recs.sort_unstable();
+    create_dir_all(&self.dir)?;
     write(
       self.path(dt.date_naive()),
       recs

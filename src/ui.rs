@@ -23,6 +23,7 @@ pub fn render(state: &State, f: &mut Frame) {
     tabs,
     date,
     list,
+    level,
     days,
     time,
     year,
@@ -38,21 +39,28 @@ pub fn render(state: &State, f: &mut Frame) {
   );
 
   f.render_widget(
-    widgets::date_paragraph(state.date).style(styles::ACCENT),
+    widgets::date_paragraph(state.date)
+      .block(CARD)
+      .style(styles::ACCENT.bold()),
     date,
   );
 
   f.render_widget(
     widgets::record_list(state)
-      .block(CARD)
+      .block(CARD.borders(Borders::ALL ^ Borders::TOP))
       .style(styles::PRIMARY),
     list,
   );
 
   f.render_widget(
-    widgets::date_records_bar_chart(state)
-      .block(CARD.title(st("Days")))
+    widgets::level_bar(state)
+      .block(CARD.title(st("Vol.")))
       .style(styles::PRIMARY),
+    level,
+  );
+
+  f.render_widget(
+    widgets::DaysBarChart::new(state).block(CARD.title(st("Days"))),
     days,
   );
 
