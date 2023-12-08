@@ -9,7 +9,11 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 
-use self::{app::App, fs_journal::FsJournal, tui::Tui};
+use self::{
+  app::{App, Command},
+  fs_journal::FsJournal,
+  tui::Tui,
+};
 
 const ROOT_DIR: &str = concat!(env!("HOME"), "/.journals");
 
@@ -29,22 +33,22 @@ impl tui::App for App {
   }
 
   fn handle_key_event(&mut self, k_event: KeyEvent) -> Result<()> {
+    use Command::*;
     use KeyCode::*;
 
-    match k_event.code {
-      Esc => self.quit(),
-      Tab => self.next_tab()?,
-      Up => self.prev_record()?,
-      Down => self.next_record()?,
-      Left => self.prev_date()?,
-      Right => self.next_date()?,
-      Char(' ') => self.add_record()?,
-      Backspace => self.delete_selected_record()?,
-      Char('u') => self.undo()?,
-      Char('U') => self.redo()?,
-      _ => (),
-    }
-    Ok(())
+    self.handle_cmd(match k_event.code {
+      Esc => Quit,
+      Tab => NextTab,
+      Up => PrevSelection,
+      Down => NextSelection,
+      Left => PrevDate,
+      Right => NextDate,
+      Char(' ') => AddRecord,
+      Backspace => DeleteSelectedRecord,
+      Char('u') => Undo,
+      Char('U') => Redo,
+      _ => Unknown,
+    })
   }
 
   fn should_quit(&self) -> bool {

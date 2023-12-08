@@ -23,6 +23,20 @@ pub struct State {
   pub recs_by_month: HashMap<Month, usize>,
 }
 
+pub enum Command {
+  NextTab,
+  PrevDate,
+  NextDate,
+  PrevSelection,
+  NextSelection,
+  AddRecord,
+  DeleteSelectedRecord,
+  Undo,
+  Redo,
+  Quit,
+  Unknown,
+}
+
 pub struct App {
   tabs: Vec<Tab>,
   selected_tab: usize,
@@ -73,42 +87,19 @@ impl App {
     self.tabs[self.selected_tab].state()
   }
 
-  pub fn next_tab(&mut self) -> Result<()> {
-    self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
-    self.tab_mut().resolve_all()?;
+  pub fn handle_cmd(&mut self, cmd: Command) -> Result<()> {
+    match cmd {
+      Command::Quit => self.quit(),
+      Command::NextTab => self.next_tab()?,
+      _ => self.tab_mut().handle_cmd(cmd)?,
+    }
     Ok(())
   }
 
-  pub fn prev_date(&mut self) -> Result<()> {
-    self.tab_mut().prev_date()
-  }
-
-  pub fn next_date(&mut self) -> Result<()> {
-    self.tab_mut().next_date()
-  }
-
-  pub fn prev_record(&mut self) -> Result<()> {
-    self.tab_mut().prev_record()
-  }
-
-  pub fn next_record(&mut self) -> Result<()> {
-    self.tab_mut().next_record()
-  }
-
-  pub fn add_record(&mut self) -> Result<()> {
-    self.tab_mut().add_record()
-  }
-
-  pub fn delete_selected_record(&mut self) -> Result<()> {
-    self.tab_mut().delete_selected_record()
-  }
-
-  pub fn undo(&mut self) -> Result<()> {
-    self.tab_mut().undo()
-  }
-
-  pub fn redo(&mut self) -> Result<()> {
-    self.tab_mut().redo()
+  fn next_tab(&mut self) -> Result<()> {
+    self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
+    self.tab_mut().resolve_all()?;
+    Ok(())
   }
 
   pub fn should_quit(&self) -> bool {

@@ -10,7 +10,9 @@ use chrono::{
 
 use self::dates_frame::DatesFrame;
 
-use super::{level::Level, selectable_list::SelectableList, Journal};
+use super::{
+  level::Level, selectable_list::SelectableList, Command, Journal,
+};
 
 pub type Hour = u8;
 
@@ -156,29 +158,36 @@ impl Tab {
     &self.state
   }
 
-  pub fn prev_date(&mut self) -> Result<()> {
+  pub fn handle_cmd(&mut self, cmd: Command) -> Result<()> {
+    match cmd {
+      Command::PrevDate => self.prev_date()?,
+      Command::NextDate => self.next_date()?,
+      Command::PrevSelection => self.state.list.select_prev(),
+      Command::NextSelection => self.state.list.select_next(),
+      Command::AddRecord => self.add_record()?,
+      Command::DeleteSelectedRecord => {
+        self.delete_selected_record()?
+      }
+      Command::Undo => self.undo()?,
+      Command::Redo => self.redo()?,
+      _ => (),
+    }
+    Ok(())
+  }
+
+  fn prev_date(&mut self) -> Result<()> {
     self.dates_frame.prev();
     self.resolve_dates()?;
     Ok(())
   }
 
-  pub fn next_date(&mut self) -> Result<()> {
+  fn next_date(&mut self) -> Result<()> {
     self.dates_frame.next();
     self.resolve_dates()?;
     Ok(())
   }
 
-  pub fn prev_record(&mut self) -> Result<()> {
-    self.state.list.select_prev();
-    Ok(())
-  }
-
-  pub fn next_record(&mut self) -> Result<()> {
-    self.state.list.select_next();
-    Ok(())
-  }
-
-  pub fn add_record(&mut self) -> Result<()> {
+  fn add_record(&mut self) -> Result<()> {
     let rec = Local::now();
     self.journal.add(rec)?;
     self.undoes.push(Action::Delete(rec));
@@ -187,7 +196,7 @@ impl Tab {
     Ok(())
   }
 
-  pub fn delete_selected_record(&mut self) -> Result<()> {
+  fn delete_selected_record(&mut self) -> Result<()> {
     if let Some(selected_rec) = self.state.list.selected_item() {
       let dt = selected_rec.with_timezone(&Local);
       self.journal.remove(dt)?;
@@ -198,7 +207,7 @@ impl Tab {
     Ok(())
   }
 
-  pub fn undo(&mut self) -> Result<()> {
+  fn undo(&mut self) -> Result<()> {
     if let Some(action) = self.undoes.pop() {
       self.execute(&action)?;
       self.redoes.push(!action);
@@ -215,7 +224,7 @@ impl Tab {
     Ok(())
   }
 
-  pub fn redo(&mut self) -> Result<()> {
+  fn redo(&mut self) -> Result<()> {
     if let Some(action) = self.redoes.pop() {
       self.execute(&action)?;
       self.undoes.push(!action);
