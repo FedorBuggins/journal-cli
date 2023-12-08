@@ -1,22 +1,21 @@
-mod dates_frame;
+mod days_frame;
 
 use std::{collections::HashMap, ops::Not};
 
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Result};
 use chrono::{
   DateTime, Datelike, Days, Duration, Local, Month, NaiveDate,
   Timelike,
 };
+use tokio::sync::mpsc;
 
-use self::dates_frame::DatesFrame;
+use self::days_frame::DaysFrame;
 
-use super::{
-  level::Level, selectable_list::SelectableList, Command, Journal,
-};
+use super::{level::Level, selectable_list::SelectableList, Journal};
 
 pub type Hour = u8;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub struct State {
   pub date: NaiveDate,
   pub list: SelectableList<DateTime<Local>>,
@@ -52,19 +51,36 @@ impl Not for Action {
   }
 }
 
+#[derive(PartialEq)]
+struct Snapshot {
+  list_selected: usize,
+  days_frame: DaysFrame,
+}
+
+impl From<&Tab> for Snapshot {
+  fn from(tab: &Tab) -> Self {
+    Self {
+      list_selected: tab.state.list.selected(),
+      days_frame: tab.days_frame.clone(),
+    }
+  }
+}
+
 pub struct Tab {
   journal: Box<dyn Journal>,
   title: String,
   state: State,
   undoes: Vec<Action>,
   redoes: Vec<Action>,
-  dates_frame: DatesFrame,
+  days_frame: DaysFrame,
+  app_changed_tx: mpsc::Sender<()>,
 }
 
 impl Tab {
   pub fn new(
     title: impl ToString,
     journal: Box<dyn Journal>,
+    app_changed_tx: mpsc::Sender<()>,
   ) -> Self {
     let today = Local::now().date_naive();
     Self {
@@ -73,11 +89,8 @@ impl Tab {
       state: State::new(today),
       undoes: vec![],
       redoes: vec![],
-      dates_frame: DatesFrame {
-        cur: today,
-        start: today - Days::new(9),
-        end: today,
-      },
+      days_frame: DaysFrame::new(today, Days::new(10)),
+      app_changed_tx,
     }
   }
 
@@ -87,13 +100,13 @@ impl Tab {
     Ok(())
   }
 
-  pub fn resolve_dates(&mut self) -> Result<()> {
-    self.state.date = self.dates_frame.cur;
+  fn resolve_dates(&mut self) -> Result<()> {
+    self.state.date = self.days_frame.cur;
     *self.state.list = self.journal.day_records(self.state.date)?;
     self.state.level = self.level()?;
     self.state.recs_by_hour = self.recs_by_hour()?;
     self.state.recs_by_date =
-      self.recs_for(self.dates_frame.start, self.dates_frame.end)?;
+      self.recs_for(self.days_frame.start, self.days_frame.end)?;
     Ok(())
   }
 
@@ -113,7 +126,7 @@ impl Tab {
       .recs_for(today - Duration::days(365), today)?
       .into_iter()
       .try_fold(HashMap::new(), |mut map, (date, recs_count)| {
-        let month = Month::try_from(date.month0() as u8 + 1)
+        let month = Month::try_from(date.month() as u8)
           .context("invalid month")?;
         *map.entry(month).or_default() += recs_count;
         Ok(map)
@@ -158,91 +171,108 @@ impl Tab {
     &self.state
   }
 
-  pub fn handle_cmd(&mut self, cmd: Command) -> Result<()> {
-    match cmd {
-      Command::PrevDate => self.prev_date()?,
-      Command::NextDate => self.next_date()?,
-      Command::PrevSelection => self.state.list.select_prev(),
-      Command::NextSelection => self.state.list.select_next(),
-      Command::AddRecord => self.add_record()?,
-      Command::DeleteSelectedRecord => {
-        self.delete_selected_record()?
-      }
-      Command::Undo => self.undo()?,
-      Command::Redo => self.redo()?,
-      _ => (),
+  pub fn prev_date(&mut self) -> Result<(), anyhow::Error> {
+    self.days_frame.prev();
+    self.resolve_dates()?;
+    self.app_changed_tx.try_send(())?;
+    Ok(())
+  }
+
+  pub fn next_date(&mut self) -> Result<(), anyhow::Error> {
+    let s = self.days_frame.cur;
+    self.days_frame.next();
+    if s != self.days_frame.cur {
+      self.resolve_dates()?;
+      self.app_changed_tx.try_send(())?;
     }
     Ok(())
   }
 
-  fn prev_date(&mut self) -> Result<()> {
-    self.dates_frame.prev();
-    self.resolve_dates()?;
+  pub fn prev_selection(&mut self) -> Result<(), anyhow::Error> {
+    let s = self.state.list.selected();
+    self.state.list.select_prev();
+    if s != self.state.list.selected() {
+      self.app_changed_tx.try_send(())?;
+    }
     Ok(())
   }
 
-  fn next_date(&mut self) -> Result<()> {
-    self.dates_frame.next();
-    self.resolve_dates()?;
+  pub fn next_selection(&mut self) -> Result<(), anyhow::Error> {
+    let s = self.state.list.selected();
+    self.state.list.select_next();
+    if s != self.state.list.selected() {
+      self.app_changed_tx.try_send(())?;
+    }
     Ok(())
   }
 
-  fn add_record(&mut self) -> Result<()> {
-    let rec = Local::now();
-    self.journal.add(rec)?;
-    self.undoes.push(Action::Delete(rec));
+  pub fn add_record(&mut self) -> Result<()> {
+    let dt = Local::now();
+    self.journal.add(dt)?;
+    self.update_month_counter(dt, 1);
+    self.undoes.push(Action::Delete(dt));
     self.redoes.clear();
-    self.resolve_all()?;
+    self.resolve_dates()?;
+    self.app_changed_tx.try_send(())?;
     Ok(())
   }
 
-  fn delete_selected_record(&mut self) -> Result<()> {
-    if let Some(selected_rec) = self.state.list.selected_item() {
-      let dt = selected_rec.with_timezone(&Local);
+  fn update_month_counter(&mut self, dt: DateTime<Local>, dv: isize) {
+    let month_counter = self.month_counter(dt);
+    *month_counter = month_counter.saturating_add_signed(dv);
+  }
+
+  fn month_counter(&mut self, dt: DateTime<Local>) -> &mut usize {
+    self
+      .state
+      .recs_by_month
+      .entry(Month::try_from(dt.month() as u8).unwrap())
+      .or_default()
+  }
+
+  pub fn delete_selected_record(&mut self) -> Result<()> {
+    if let Some(&dt) = self.state.list.selected_item() {
       self.journal.remove(dt)?;
+      self.update_month_counter(dt, -1);
       self.undoes.push(Action::Add(dt));
       self.redoes.clear();
-      self.resolve_all()?;
+      self.resolve_dates()?;
+      self.app_changed_tx.try_send(())?;
     }
     Ok(())
   }
 
-  fn undo(&mut self) -> Result<()> {
+  pub fn undo(&mut self) -> Result<()> {
     if let Some(action) = self.undoes.pop() {
-      self.execute(&action)?;
+      self.apply(&action)?;
       self.redoes.push(!action);
-      self.resolve_all()?;
+      self.resolve_dates()?;
+      self.app_changed_tx.try_send(())?;
     }
     Ok(())
   }
 
-  fn execute(&mut self, action: &Action) -> Result<()> {
+  fn apply(&mut self, action: &Action) -> Result<()> {
     match *action {
-      Action::Add(rec) => self.journal.add(rec)?,
-      Action::Delete(rec) => self.journal.remove(rec)?,
+      Action::Add(dt) => {
+        self.journal.add(dt)?;
+        self.update_month_counter(dt, 1);
+      }
+      Action::Delete(dt) => {
+        self.journal.remove(dt)?;
+        self.update_month_counter(dt, -1);
+      }
     }
     Ok(())
   }
 
-  fn redo(&mut self) -> Result<()> {
+  pub fn redo(&mut self) -> Result<()> {
     if let Some(action) = self.redoes.pop() {
-      self.execute(&action)?;
+      self.apply(&action)?;
       self.undoes.push(!action);
-      self.resolve_all()?;
+      self.resolve_dates()?;
+      self.app_changed_tx.try_send(())?;
     }
     Ok(())
-  }
-}
-
-#[cfg(test)]
-mod learning_tests {
-  use chrono::{Duration, NaiveTime};
-
-  #[test]
-  fn time_add_dutation_with_overflow() {
-    let time = NaiveTime::from_hms_opt(23, 0, 0).unwrap();
-    let result = time + Duration::hours(1);
-    let expected = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
-    assert_eq!(result, expected);
   }
 }

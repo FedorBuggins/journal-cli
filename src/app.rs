@@ -3,24 +3,25 @@ mod level;
 mod selectable_list;
 mod tab;
 
-use std::collections::HashMap;
-
 use anyhow::Result;
-use chrono::{DateTime, Local, Month, NaiveDate};
+use tokio::sync::mpsc;
 
 use self::{
-  journal::Journal, level::Level, selectable_list::SelectableList,
-  tab::Tab,
+  journal::Journal, selectable_list::SelectableList, tab::Tab,
 };
 
+#[derive(Clone, PartialEq)]
 pub struct State {
   pub tabs: SelectableList<String>,
-  pub date: NaiveDate,
-  pub list: SelectableList<DateTime<Local>>,
-  pub level: Level,
-  pub recs_by_hour: HashMap<tab::Hour, usize>,
-  pub recs_by_date: Vec<(NaiveDate, usize)>,
-  pub recs_by_month: HashMap<Month, usize>,
+  inner: tab::State,
+}
+
+impl std::ops::Deref for State {
+  type Target = tab::State;
+
+  fn deref(&self) -> &Self::Target {
+    &self.inner
+  }
 }
 
 pub enum Command {
@@ -40,6 +41,8 @@ pub enum Command {
 pub struct App {
   tabs: Vec<Tab>,
   selected_tab: usize,
+  tx: mpsc::Sender<()>,
+  rx: mpsc::Receiver<()>,
   should_quit: bool,
 }
 
@@ -50,11 +53,15 @@ impl App {
   where
     S: ToString,
   {
-    let tabs =
-      journals.into_iter().map(|(t, j)| Tab::new(t, j)).collect();
+    let (tx, rx) = mpsc::channel(1);
     let mut app = Self {
-      tabs,
+      tabs: journals
+        .into_iter()
+        .map(|(t, j)| Tab::new(t, j, tx.clone()))
+        .collect(),
       selected_tab: 0,
+      tx,
+      rx,
       should_quit: false,
     };
     app.tab_mut().resolve_all()?;
@@ -66,7 +73,6 @@ impl App {
   }
 
   pub fn state(&self) -> State {
-    let tab_state = self.tab_state().clone();
     State {
       tabs: self
         .tabs
@@ -74,12 +80,7 @@ impl App {
         .map(|tab| tab.title().clone())
         .collect::<SelectableList<_>>()
         .with_selected(self.selected_tab),
-      date: tab_state.date,
-      list: tab_state.list,
-      level: tab_state.level,
-      recs_by_hour: tab_state.recs_by_hour,
-      recs_by_date: tab_state.recs_by_date,
-      recs_by_month: tab_state.recs_by_month,
+      inner: self.tab_state().clone(),
     }
   }
 
@@ -88,10 +89,21 @@ impl App {
   }
 
   pub fn handle_cmd(&mut self, cmd: Command) -> Result<()> {
+    use Command::*;
     match cmd {
-      Command::Quit => self.quit(),
-      Command::NextTab => self.next_tab()?,
-      _ => self.tab_mut().handle_cmd(cmd)?,
+      Quit => self.should_quit = true,
+      NextTab => self.next_tab()?,
+      PrevDate => self.tab_mut().prev_date()?,
+      NextDate => self.tab_mut().next_date()?,
+      PrevSelection => self.tab_mut().prev_selection()?,
+      NextSelection => self.tab_mut().next_selection()?,
+      AddRecord => self.tab_mut().add_record()?,
+      DeleteSelectedRecord => {
+        self.tab_mut().delete_selected_record()?
+      }
+      Undo => self.tab_mut().undo()?,
+      Redo => self.tab_mut().redo()?,
+      Unknown => (),
     }
     Ok(())
   }
@@ -99,14 +111,15 @@ impl App {
   fn next_tab(&mut self) -> Result<()> {
     self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
     self.tab_mut().resolve_all()?;
+    self.tx.try_send(()).unwrap();
     Ok(())
+  }
+
+  pub fn changes(&mut self) -> &mut mpsc::Receiver<()> {
+    &mut self.rx
   }
 
   pub fn should_quit(&self) -> bool {
     self.should_quit
-  }
-
-  pub fn quit(&mut self) {
-    self.should_quit = true;
   }
 }

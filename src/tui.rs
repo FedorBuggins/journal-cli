@@ -11,6 +11,7 @@ use crossterm::{
   terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Frame, Terminal};
+use tokio::sync::mpsc;
 
 use self::event_listener::EventListener;
 
@@ -26,8 +27,8 @@ pub enum Event {
 pub trait App {
   fn render(&self, f: &mut Frame);
   fn handle_key_event(&mut self, k_event: KeyEvent) -> Result<()>;
+  fn changes(&mut self) -> &mut mpsc::Receiver<()>;
   fn should_quit(&self) -> bool;
-  fn quit(&mut self);
 }
 
 pub struct Tui {
@@ -45,9 +46,9 @@ impl Tui {
 
   pub async fn launch(mut self, app: &mut impl App) -> Result<()> {
     self.enter()?;
-    let err = self.run(app).await.err();
+    let res = self.run(app).await;
     self.exit()?;
-    if let Some(err) = err {
+    if let Err(err) = res {
       eprintln!("{err}");
     }
     Ok(())
@@ -83,17 +84,25 @@ impl Tui {
   }
 
   async fn run(&mut self, app: &mut impl App) -> Result<()> {
+    self.render(app)?;
     while !app.should_quit() {
-      self.terminal.draw(|f| app.render(f))?;
-      match self.events.next().await? {
-        Event::Resize => (),
-        Event::Error(error) => return Err(anyhow::anyhow!(error)),
-        Event::KeyPress(k_event) => match k_event.code {
-          KeyCode::Char('c' | 'C') if is_ctrl(k_event) => app.quit(),
-          _ => app.handle_key_event(k_event)?,
-        },
+      tokio::select! {
+        _ = app.changes().recv() => self.render(app)?,
+        event = self.events.next() => match event? {
+          Event::Resize => self.render(app)?,
+          Event::Error(error) => return Err(anyhow::anyhow!(error)),
+          Event::KeyPress(k_event) => match k_event.code {
+            KeyCode::Char('c' | 'C') if is_ctrl(k_event) => break,
+            _ => app.handle_key_event(k_event)?,
+          },
+        }
       }
     }
+    Ok(())
+  }
+
+  fn render(&mut self, app: &mut impl App) -> Result<()> {
+    self.terminal.draw(|f| app.render(f))?;
     Ok(())
   }
 

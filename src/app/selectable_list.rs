@@ -1,6 +1,6 @@
 use std::cmp::min;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub struct SelectableList<T>
 where
   T: Default + Clone,

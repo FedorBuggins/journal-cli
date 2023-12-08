@@ -1,4 +1,4 @@
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub struct Level {
   pub percentage: f32,
   pub middle: f32,
@@ -14,6 +14,6 @@ impl Level {
   }
 
   pub fn count(&self) -> usize {
-    (self.middle * self.percentage) as _
+    (self.middle * self.percentage).ceil() as _
   }
 }

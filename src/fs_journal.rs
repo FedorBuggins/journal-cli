@@ -4,7 +4,8 @@ use std::{
   path::{Path, PathBuf},
 };
 
-use chrono::{DateTime, Local, NaiveDate, ParseError};
+use anyhow::{Context, Result};
+use chrono::{DateTime, Local, NaiveDate};
 
 use crate::app::journal::{DayRecords, Journal};
 
@@ -18,37 +19,34 @@ impl FsJournal {
   }
 
   fn path(&self, date: NaiveDate) -> PathBuf {
-    path(&self.dir, date)
+    self.dir.join(format!("{date}.txt"))
   }
 }
 
 impl Journal for FsJournal {
-  fn day_records(&self, date: NaiveDate) -> io::Result<DayRecords> {
+  fn day_records(&self, date: NaiveDate) -> Result<DayRecords> {
     read_if_exist(&self.path(date))?
       .unwrap_or_default()
       .lines()
       .map(DateTime::parse_from_rfc3339)
       .map(|dt| dt.map(|dt| dt.with_timezone(&Local)))
       .collect::<Result<_, _>>()
-      .map_err(to_io_error)
+      .context("date parse error")
   }
 
-  fn add(&self, dt: DateTime<Local>) -> io::Result<()> {
+  fn add(&mut self, dt: DateTime<Local>) -> Result<()> {
     let mut recs = self.day_records(dt.date_naive())?;
     recs.push(dt);
     recs.sort_unstable();
     create_dir_all(&self.dir)?;
     write(
       self.path(dt.date_naive()),
-      recs
-        .into_iter()
-        .map(|dt| dt.to_rfc3339() + "\n")
-        .collect::<String>(),
+      recs.into_iter().map(date_time_line).collect::<String>(),
     )?;
     Ok(())
   }
 
-  fn remove(&self, dt: DateTime<Local>) -> io::Result<()> {
+  fn remove(&mut self, dt: DateTime<Local>) -> Result<()> {
     let recs = self.day_records(dt.date_naive())?;
     if !recs.is_empty() {
       write(
@@ -56,16 +54,12 @@ impl Journal for FsJournal {
         recs
           .into_iter()
           .filter(|rec| rec != &dt)
-          .map(|dt| dt.to_rfc3339() + "\n")
+          .map(date_time_line)
           .collect::<String>(),
       )?;
     }
     Ok(())
   }
-}
-
-fn path(dir: &Path, date: NaiveDate) -> PathBuf {
-  dir.join(format!("{date}.txt"))
 }
 
 fn read_if_exist(path: &Path) -> io::Result<Option<String>> {
@@ -76,6 +70,6 @@ fn read_if_exist(path: &Path) -> io::Result<Option<String>> {
   }
 }
 
-fn to_io_error(err: ParseError) -> io::Error {
-  io::Error::new(io::ErrorKind::InvalidData, err)
+fn date_time_line(dt: DateTime<Local>) -> String {
+  dt.to_rfc3339() + "\n"
 }
