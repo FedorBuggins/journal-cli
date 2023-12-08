@@ -6,7 +6,7 @@ use std::{
 
 use chrono::{DateTime, Local, NaiveDate, ParseError};
 
-use crate::app::{DayRecords, Journal};
+use crate::app::journal::{DayRecords, Journal};
 
 pub struct FsJournal {
   dir: PathBuf,

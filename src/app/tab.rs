@@ -10,18 +10,9 @@ use chrono::{
 
 use self::dates_frame::DatesFrame;
 
-use super::{Journal, Level, SelectableList};
+use super::{level::Level, selectable_list::SelectableList, Journal};
 
 pub type Hour = u8;
-
-pub struct Tab {
-  journal: Box<dyn Journal>,
-  title: String,
-  state: State,
-  undoes: Vec<Action>,
-  redoes: Vec<Action>,
-  dates_frame: DatesFrame,
-}
 
 #[derive(Default, Clone)]
 pub struct State {
@@ -57,6 +48,15 @@ impl Not for Action {
       Action::Delete(dt) => Action::Add(dt),
     }
   }
+}
+
+pub struct Tab {
+  journal: Box<dyn Journal>,
+  title: String,
+  state: State,
+  undoes: Vec<Action>,
+  redoes: Vec<Action>,
+  dates_frame: DatesFrame,
 }
 
 impl Tab {
@@ -183,14 +183,7 @@ impl Tab {
     self.journal.add(rec)?;
     self.undoes.push(Action::Delete(rec));
     self.redoes.clear();
-    self.resolve_all_preserve_list_selection()?;
-    Ok(())
-  }
-
-  fn resolve_all_preserve_list_selection(&mut self) -> Result<()> {
-    // let selected = self.state.list.selected();
     self.resolve_all()?;
-    // self.state.list.select(selected);
     Ok(())
   }
 
@@ -200,7 +193,7 @@ impl Tab {
       self.journal.remove(dt)?;
       self.undoes.push(Action::Add(dt));
       self.redoes.clear();
-      self.resolve_all_preserve_list_selection()?;
+      self.resolve_all()?;
     }
     Ok(())
   }
@@ -209,7 +202,7 @@ impl Tab {
     if let Some(action) = self.undoes.pop() {
       self.execute(&action)?;
       self.redoes.push(!action);
-      self.resolve_all_preserve_list_selection()?;
+      self.resolve_all()?;
     }
     Ok(())
   }
@@ -226,7 +219,7 @@ impl Tab {
     if let Some(action) = self.redoes.pop() {
       self.execute(&action)?;
       self.undoes.push(!action);
-      self.resolve_all_preserve_list_selection()?;
+      self.resolve_all()?;
     }
     Ok(())
   }
