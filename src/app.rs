@@ -35,63 +35,53 @@ pub enum Command {
   Undo,
   Redo,
   Quit,
-  Unknown,
 }
 
 pub struct App {
-  tabs: Vec<Tab>,
-  selected_tab: usize,
+  tabs: SelectableList<Tab>,
+  should_quit: bool,
   tx: mpsc::Sender<()>,
   rx: mpsc::Receiver<()>,
-  should_quit: bool,
 }
 
 impl App {
-  pub fn try_new<S>(
-    journals: Vec<(S, Box<dyn Journal>)>,
-  ) -> Result<Self>
+  pub fn new<I, S>(journals: I) -> Self
   where
+    I: IntoIterator<Item = (S, Box<dyn Journal>)>,
     S: ToString,
   {
     let (tx, rx) = mpsc::channel(1);
-    let mut app = Self {
-      tabs: journals
-        .into_iter()
-        .map(|(t, j)| Tab::new(t, j, tx.clone()))
-        .collect(),
-      selected_tab: 0,
+    let tabs = journals
+      .into_iter()
+      .map(|(t, j)| Tab::new(t, j, tx.clone()))
+      .collect();
+    Self {
+      tabs,
+      should_quit: false,
       tx,
       rx,
-      should_quit: false,
-    };
-    app.tab_mut().resolve_all()?;
-    Ok(app)
+    }
+  }
+
+  pub fn init(mut self) -> Result<Self> {
+    self.tab_mut().resolve_all()?;
+    Ok(self)
   }
 
   fn tab_mut(&mut self) -> &mut Tab {
-    &mut self.tabs[self.selected_tab]
+    self.tabs.selected_item_mut().unwrap()
   }
 
   pub fn state(&self) -> State {
     State {
-      tabs: self
-        .tabs
-        .iter()
-        .map(|tab| tab.title().clone())
-        .collect::<SelectableList<_>>()
-        .with_selected(self.selected_tab),
-      inner: self.tab_state().clone(),
+      tabs: self.tabs.map(|tab| tab.title().clone()),
+      inner: self.tabs.selected_item().unwrap().state().clone(),
     }
-  }
-
-  fn tab_state(&self) -> &tab::State {
-    self.tabs[self.selected_tab].state()
   }
 
   pub fn handle_cmd(&mut self, cmd: Command) -> Result<()> {
     use Command::*;
     match cmd {
-      Quit => self.should_quit = true,
       NextTab => self.next_tab()?,
       PrevDate => self.tab_mut().prev_date()?,
       NextDate => self.tab_mut().next_date()?,
@@ -103,15 +93,15 @@ impl App {
       }
       Undo => self.tab_mut().undo()?,
       Redo => self.tab_mut().redo()?,
-      Unknown => (),
+      Quit => self.should_quit = true,
     }
     Ok(())
   }
 
   fn next_tab(&mut self) -> Result<()> {
-    self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
+    self.tabs.wrapping_select_next();
     self.tab_mut().resolve_all()?;
-    self.tx.try_send(()).unwrap();
+    self.tx.try_send(())?;
     Ok(())
   }
 

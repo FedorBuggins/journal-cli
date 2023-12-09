@@ -29,7 +29,7 @@ impl State {
   fn new(date: NaiveDate) -> Self {
     Self {
       date,
-      list: SelectableList::default().with_reversed_selection(),
+      list: SelectableList::new().with_reversed_selection(true),
       ..Default::default()
     }
   }
@@ -47,21 +47,6 @@ impl Not for Action {
     match self {
       Action::Add(dt) => Action::Delete(dt),
       Action::Delete(dt) => Action::Add(dt),
-    }
-  }
-}
-
-#[derive(PartialEq)]
-struct Snapshot {
-  list_selected: usize,
-  days_frame: DaysFrame,
-}
-
-impl From<&Tab> for Snapshot {
-  fn from(tab: &Tab) -> Self {
-    Self {
-      list_selected: tab.state.list.selected(),
-      days_frame: tab.days_frame.clone(),
     }
   }
 }
@@ -140,7 +125,7 @@ impl Tab {
   ) -> Result<Vec<(NaiveDate, usize)>> {
     start
       .iter_days()
-      .take_while(move |date| date <= &end)
+      .take_while(|date| date <= &end)
       .map(|date| Ok((date, self.journal.day_records(date)?.len())))
       .collect()
   }
@@ -207,17 +192,34 @@ impl Tab {
   }
 
   pub fn add_record(&mut self) -> Result<()> {
-    let dt = Local::now();
-    self.journal.add(dt)?;
-    self.update_month_counter(dt, 1);
-    self.undoes.push(Action::Delete(dt));
+    let action = Action::Add(Local::now());
+    self.apply(&action)?;
+    self.undoes.push(!action);
     self.redoes.clear();
     self.resolve_dates()?;
     self.app_changed_tx.try_send(())?;
     Ok(())
   }
 
-  fn update_month_counter(&mut self, dt: DateTime<Local>, dv: isize) {
+  fn apply(&mut self, action: &Action) -> Result<()> {
+    match *action {
+      Action::Add(dt) => {
+        self.journal.add(dt)?;
+        self.increment_month_counter(dt, 1);
+      }
+      Action::Delete(dt) => {
+        self.journal.remove(dt)?;
+        self.increment_month_counter(dt, -1);
+      }
+    }
+    Ok(())
+  }
+
+  fn increment_month_counter(
+    &mut self,
+    dt: DateTime<Local>,
+    dv: isize,
+  ) {
     let month_counter = self.month_counter(dt);
     *month_counter = month_counter.saturating_add_signed(dv);
   }
@@ -232,9 +234,9 @@ impl Tab {
 
   pub fn delete_selected_record(&mut self) -> Result<()> {
     if let Some(&dt) = self.state.list.selected_item() {
-      self.journal.remove(dt)?;
-      self.update_month_counter(dt, -1);
-      self.undoes.push(Action::Add(dt));
+      let action = Action::Delete(dt);
+      self.apply(&action)?;
+      self.undoes.push(!action);
       self.redoes.clear();
       self.resolve_dates()?;
       self.app_changed_tx.try_send(())?;
@@ -248,20 +250,6 @@ impl Tab {
       self.redoes.push(!action);
       self.resolve_dates()?;
       self.app_changed_tx.try_send(())?;
-    }
-    Ok(())
-  }
-
-  fn apply(&mut self, action: &Action) -> Result<()> {
-    match *action {
-      Action::Add(dt) => {
-        self.journal.add(dt)?;
-        self.update_month_counter(dt, 1);
-      }
-      Action::Delete(dt) => {
-        self.journal.remove(dt)?;
-        self.update_month_counter(dt, -1);
-      }
     }
     Ok(())
   }
