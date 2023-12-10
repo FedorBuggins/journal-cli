@@ -3,14 +3,20 @@ mod level;
 mod selectable_list;
 mod tab;
 
-use anyhow::Result;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use futures::{future::select_ok, Future, FutureExt};
+use tokio::{
+  sync::{mpsc, watch, Mutex},
+  task::{AbortHandle, JoinHandle},
+};
 
 use self::{
   journal::Journal, selectable_list::SelectableList, tab::Tab,
 };
 
-#[derive(Clone, PartialEq)]
+#[derive(Default, Clone, PartialEq)]
 pub struct State {
   pub tabs: SelectableList<String>,
   inner: tab::State,
@@ -21,6 +27,15 @@ impl std::ops::Deref for State {
 
   fn deref(&self) -> &Self::Target {
     &self.inner
+  }
+}
+
+impl State {
+  pub fn new(tabs: impl IntoIterator<Item = String>) -> Self {
+    Self {
+      tabs: tabs.into_iter().collect(),
+      ..Default::default()
+    }
   }
 }
 
@@ -38,10 +53,12 @@ pub enum Command {
 }
 
 pub struct App {
-  tabs: SelectableList<Tab>,
+  tabs: SelectableList<Arc<Mutex<Tab>>>,
+  state_tx: Arc<Mutex<watch::Sender<State>>>,
+  state_rx: watch::Receiver<State>,
+  changes_rx: mpsc::Receiver<()>,
+  abort_handle: AbortHandle,
   should_quit: bool,
-  tx: mpsc::Sender<()>,
-  rx: mpsc::Receiver<()>,
 }
 
 impl App {
@@ -50,49 +67,108 @@ impl App {
     I: IntoIterator<Item = (S, Box<dyn Journal>)>,
     S: ToString,
   {
-    let (tx, rx) = mpsc::channel(1);
-    let tabs = journals
-      .into_iter()
-      .map(|(t, j)| Tab::new(t, j, tx.clone()))
-      .collect();
+    let tabs: Vec<_> =
+      journals.into_iter().map(|(t, j)| Tab::new(t, j)).collect();
+    let tab_titles = tabs.iter().map(|tab| tab.title().clone());
+    let (state_tx, state_rx) = watch::channel(State::new(tab_titles));
+    let state_tx = Arc::new(Mutex::new(state_tx));
+    let (changes_tx, changes_rx) = mpsc::channel(1);
+
+    Self::subscribe_on_tabs(&tabs, state_tx.clone());
+    Self::broadcast_changes(state_rx.clone(), changes_tx);
+
+    let tabs =
+      tabs.into_iter().map(|t| Arc::new(Mutex::new(t))).collect();
+    let abort_handle =
+      tokio::spawn(async { Ok(()) as Result<()> }).abort_handle();
+
     Self {
       tabs,
+      state_tx,
+      state_rx,
+      changes_rx,
+      abort_handle,
       should_quit: false,
-      tx,
-      rx,
     }
   }
 
-  pub fn init(mut self) -> Result<Self> {
-    self.tab_mut().resolve_all()?;
+  fn subscribe_on_tabs(
+    tabs: &[Tab],
+    state_tx: Arc<Mutex<watch::Sender<State>>>,
+  ) {
+    let mut subscriptions: Vec<_> =
+      tabs.iter().map(|tab| tab.subscribe()).collect();
+    tokio::spawn(async move {
+      loop {
+        let rx_iter = subscriptions.iter_mut().map(|state| {
+          async {
+            state.changed().await?;
+            Ok(state.borrow().clone()) as Result<tab::State>
+          }
+          .boxed()
+        });
+        let (tab_state, ..) = select_ok(rx_iter).await.unwrap();
+        let state_tx = state_tx.lock().await;
+        state_tx.send_modify(|state| state.inner = tab_state);
+      }
+    });
+  }
+
+  fn broadcast_changes(
+    mut state_rx: watch::Receiver<State>,
+    changes_tx: mpsc::Sender<()>,
+  ) {
+    tokio::spawn(async move {
+      loop {
+        state_rx.changed().await.unwrap();
+        changes_tx.send(()).await.unwrap();
+      }
+    });
+  }
+
+  pub async fn init(mut self) -> Result<Self> {
+    self.switch_map(|tab| async move {
+      tab.lock().await.resolve_all().await
+    });
     Ok(self)
   }
 
-  fn tab_mut(&mut self) -> &mut Tab {
-    self.tabs.selected_item_mut().unwrap()
-  }
-
   pub fn state(&self) -> State {
-    State {
-      tabs: self.tabs.map(|tab| tab.title().clone()),
-      inner: self.tabs.selected_item().unwrap().state().clone(),
-    }
+    self.state_rx.borrow().clone()
   }
 
   pub fn handle_cmd(&mut self, cmd: Command) -> Result<()> {
     use Command::*;
     match cmd {
       NextTab => self.next_tab()?,
-      PrevDate => self.tab_mut().prev_date()?,
-      NextDate => self.tab_mut().next_date()?,
-      PrevSelection => self.tab_mut().prev_selection()?,
-      NextSelection => self.tab_mut().next_selection()?,
-      AddRecord => self.tab_mut().add_record()?,
-      DeleteSelectedRecord => {
-        self.tab_mut().delete_selected_record()?
+      PrevDate => self.switch_map(|tab| async move {
+        tab.lock().await.prev_date().await
+      }),
+      NextDate => self.switch_map(|tab| async move {
+        tab.lock().await.next_date().await
+      }),
+      PrevSelection => self.switch_map(|tab| async move {
+        tab.lock().await.prev_selection().await
+      }),
+      NextSelection => self.switch_map(|tab| async move {
+        tab.lock().await.next_selection().await
+      }),
+      AddRecord => self.concat_map(|tab| async move {
+        tab.lock().await.add_record().await
+      }),
+      DeleteSelectedRecord => self.concat_map(|tab| async move {
+        tab.lock().await.delete_selected_record().await
+      }),
+      Undo => {
+        self.concat_map(
+          |tab| async move { tab.lock().await.undo().await },
+        )
       }
-      Undo => self.tab_mut().undo()?,
-      Redo => self.tab_mut().redo()?,
+      Redo => {
+        self.concat_map(
+          |tab| async move { tab.lock().await.redo().await },
+        )
+      }
       Quit => self.should_quit = true,
     }
     Ok(())
@@ -100,13 +176,49 @@ impl App {
 
   fn next_tab(&mut self) -> Result<()> {
     self.tabs.wrapping_select_next();
-    self.tab_mut().resolve_all()?;
-    self.tx.try_send(())?;
+    self
+      .state_tx
+      .try_lock()
+      .context("use lock?!")?
+      .send_modify(|state| state.tabs.select(self.tabs.selected()));
+    self.switch_map(|tab| async move {
+      tab.lock().await.resolve_all().await
+    });
     Ok(())
   }
 
+  fn switch_map<F>(
+    &mut self,
+    f: impl Fn(Arc<Mutex<Tab>>) -> F + Send + 'static,
+  ) where
+    F: Future<Output = Result<()>> + Send,
+  {
+    self.abort_handle.abort();
+    self.abort_handle = self.spawn_tab(f).abort_handle();
+  }
+
+  fn spawn_tab<F>(
+    &self,
+    f: impl Fn(Arc<Mutex<Tab>>) -> F + Send + 'static,
+  ) -> JoinHandle<()>
+  where
+    F: Future<Output = Result<()>> + Send,
+  {
+    let tab = self.tabs.selected_item().unwrap().clone();
+    tokio::spawn(async move { f(tab).await.unwrap() })
+  }
+
+  fn concat_map<F>(
+    &self,
+    f: impl Fn(Arc<Mutex<Tab>>) -> F + Send + 'static,
+  ) where
+    F: Future<Output = Result<()>> + Send,
+  {
+    self.spawn_tab(f);
+  }
+
   pub fn changes(&mut self) -> &mut mpsc::Receiver<()> {
-    &mut self.rx
+    &mut self.changes_rx
   }
 
   pub fn should_quit(&self) -> bool {

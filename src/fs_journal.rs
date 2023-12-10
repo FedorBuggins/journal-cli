@@ -1,11 +1,12 @@
 use std::{
-  fs::{create_dir_all, read_to_string, write},
   io,
   path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate};
+use tokio::fs::{create_dir_all, read_to_string, try_exists, write};
 
 use crate::app::journal::{DayRecords, Journal};
 
@@ -23,9 +24,11 @@ impl FsJournal {
   }
 }
 
+#[async_trait]
 impl Journal for FsJournal {
-  fn day_records(&self, date: NaiveDate) -> Result<DayRecords> {
-    read_if_exist(&self.path(date))?
+  async fn day_records(&self, date: NaiveDate) -> Result<DayRecords> {
+    read_if_exist(&self.path(date))
+      .await?
       .unwrap_or_default()
       .lines()
       .map(DateTime::parse_from_rfc3339)
@@ -34,20 +37,21 @@ impl Journal for FsJournal {
       .context("date parse error")
   }
 
-  fn add(&mut self, dt: DateTime<Local>) -> Result<()> {
-    let mut recs = self.day_records(dt.date_naive())?;
+  async fn add(&self, dt: DateTime<Local>) -> Result<()> {
+    let mut recs = self.day_records(dt.date_naive()).await?;
     recs.push(dt);
     recs.sort_unstable();
-    create_dir_all(&self.dir)?;
+    create_dir_all(&self.dir).await?;
     write(
       self.path(dt.date_naive()),
       recs.into_iter().map(date_time_line).collect::<String>(),
-    )?;
+    )
+    .await?;
     Ok(())
   }
 
-  fn remove(&mut self, dt: DateTime<Local>) -> Result<()> {
-    let recs = self.day_records(dt.date_naive())?;
+  async fn remove(&self, dt: DateTime<Local>) -> Result<()> {
+    let recs = self.day_records(dt.date_naive()).await?;
     if !recs.is_empty() {
       write(
         self.path(dt.date_naive()),
@@ -56,15 +60,16 @@ impl Journal for FsJournal {
           .filter(|rec| rec != &dt)
           .map(date_time_line)
           .collect::<String>(),
-      )?;
+      )
+      .await?;
     }
     Ok(())
   }
 }
 
-fn read_if_exist(path: &Path) -> io::Result<Option<String>> {
-  if Path::new(path).exists() {
-    read_to_string(path).map(Some)
+async fn read_if_exist(path: &Path) -> io::Result<Option<String>> {
+  if try_exists(path).await? {
+    read_to_string(path).await.map(Some)
   } else {
     Ok(None)
   }

@@ -19,7 +19,7 @@ use self::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-  Tui::try_new()?.launch(&mut app().init()?).await
+  Tui::try_new()?.launch(&mut app().init().await?).await
 }
 
 fn app() -> App {

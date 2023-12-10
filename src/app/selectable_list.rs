@@ -16,11 +16,6 @@ impl<T> SelectableList<T> {
     }
   }
 
-  pub fn with_selected(mut self, selected: usize) -> Self {
-    self.select(selected);
-    self
-  }
-
   pub fn with_reversed_selection(mut self, val: bool) -> Self {
     self.reversed_selection = val;
     self
@@ -45,11 +40,6 @@ impl<T> SelectableList<T> {
 
   pub fn selected_item(&self) -> Option<&T> {
     self.get(self.selected())
-  }
-
-  pub fn selected_item_mut(&mut self) -> Option<&mut T> {
-    let index = self.selected();
-    self.get_mut(index)
   }
 
   pub fn select(&mut self, selected: usize) {
@@ -82,14 +72,6 @@ impl<T> SelectableList<T> {
 
   pub fn wrapping_select_next(&mut self) {
     self.selected = self.selected.wrapping_add(1) % self.len();
-  }
-
-  pub fn map<R>(&self, f: impl Fn(&T) -> R) -> SelectableList<R> {
-    self
-      .iter()
-      .map(f)
-      .collect::<SelectableList<_>>()
-      .with_selected(self.selected())
   }
 }
 
