@@ -101,7 +101,7 @@ impl Tui {
     Ok(())
   }
 
-  fn render(&mut self, app: &mut impl App) -> Result<()> {
+  fn render(&mut self, app: &impl App) -> Result<()> {
     self.terminal.draw(|f| app.render(f))?;
     Ok(())
   }
