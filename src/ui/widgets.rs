@@ -46,7 +46,7 @@ pub fn record_list(state: &State) -> List<'_> {
 }
 
 pub fn level_bar(state: &State) -> BarChart<'_> {
-  let percentage = state.level.percentage;
+  let percentage = state.level.percentage();
   let level = (percentage * 100.).round() as _;
   let count = state.level.count();
   let target = state.level.target();
@@ -58,12 +58,17 @@ pub fn level_bar(state: &State) -> BarChart<'_> {
         .value(level)
         .text_value(format!("{count}/{target} ({level}%)"))]),
     )
-    .bar_style(styles::RED.fg(level_color(percentage)))
+    .bar_style(
+      styles::RED.fg(level_color(percentage, state.tabs.selected())),
+    )
 }
 
-fn level_color(percentage: f32) -> Color {
+fn level_color(mut percentage: f32, tab_index: usize) -> Color {
   const RGB_MAX: f32 = u8::MAX as f32;
   const K: f32 = 2.5;
+  if tab_index == 0 {
+    percentage = (1. - percentage).abs();
+  }
   Color::Rgb(
     (RGB_MAX * percentage * K) as _,
     (RGB_MAX * (1. - percentage.powf(K))) as _,
@@ -101,19 +106,20 @@ impl<'a> DaysBarChart<'a> {
       .state
       .recs_by_date
       .iter()
-      .map(|(date, count)| {
+      .map(|&(date, count)| {
         let label = date.format("%e").to_string();
-        if date == &self.state.date {
+        if date == self.state.date {
           Bar::default()
             .label(Line::styled(label, styles::ACCENT))
-            .value(*count as _)
+            .value(count as _)
             .style(styles::ACCENT)
         } else {
           Bar::default()
             .label(Line::styled(label, styles::PRIMARY))
-            .value(*count as _)
+            .value(count as _)
             .style(styles::PRIMARY.fg(level_color(
-              *count as f32 / self.state.level.middle,
+              count as f32 / self.state.level.middle(),
+              self.state.tabs.selected(),
             )))
         }
       })

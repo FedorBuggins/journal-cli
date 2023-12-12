@@ -149,21 +149,22 @@ impl Tab {
 
   async fn level(&self) -> Result<Level> {
     let today = Local::now().date_naive();
-    let date_count =
-      self.journal.day_records(self.state.date).await?.len() as f32;
     let recent_days = self
       .recs_for(today - Days::new(10), today - Days::new(1))
       .await?;
-    let sum: f32 =
-      recent_days.iter().map(|(_, recs)| *recs as f32).sum();
-    let count =
-      recent_days.iter().filter(|(_, count)| count != &0).count();
-    let middle = if count == 0 {
-      date_count
+    let recent_days_iter =
+      recent_days.iter().map(|(_, recs)| *recs as f32);
+    let recent_days_sum: f32 = recent_days_iter.clone().sum();
+    let recent_days_count =
+      recent_days_iter.filter(|count| count != &0.).count();
+    let date_count =
+      self.journal.day_records(self.state.date).await?.len();
+    let middle = if recent_days_count == 0 {
+      date_count as f32
     } else {
-      sum / count as f32
+      recent_days_sum / recent_days_count as f32
     };
-    Ok(Level::new(date_count / middle, middle))
+    Ok(Level::new(date_count, middle))
   }
 
   async fn send_state(&self) -> Result<()> {
