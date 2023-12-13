@@ -1,12 +1,12 @@
 pub mod journal;
-mod level;
+pub mod level;
 mod selectable_list;
 mod tab;
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use futures::{future::select_ok, Future, FutureExt};
+use futures::{Future, FutureExt};
 use tokio::{
   sync::{mpsc, watch, Mutex},
   task::{AbortHandle, JoinHandle},
@@ -62,13 +62,15 @@ pub struct App {
 }
 
 impl App {
-  pub fn new<I, S>(journals: I) -> Self
+  pub fn new<I, S>(args: I) -> Self
   where
-    I: IntoIterator<Item = (S, Box<dyn Journal>)>,
+    I: IntoIterator<Item = (S, usize, Box<dyn Journal>)>,
     S: ToString,
   {
-    let tabs: Vec<_> =
-      journals.into_iter().map(|(t, j)| Tab::new(t, j)).collect();
+    let tabs: Vec<_> = args
+      .into_iter()
+      .map(|(t, c, j)| Tab::new(t, c, j))
+      .collect();
     let tab_titles = tabs.iter().map(|tab| tab.title().clone());
     let (state_tx, state_rx) = watch::channel(State::new(tab_titles));
     let state_tx = Arc::new(Mutex::new(state_tx));
@@ -96,20 +98,27 @@ impl App {
     tabs: &[Tab],
     state_tx: Arc<Mutex<watch::Sender<State>>>,
   ) {
-    let mut subscriptions: Vec<_> =
+    let mut active_tab = 0;
+    let mut tab_states: Vec<_> =
       tabs.iter().map(|tab| tab.subscribe()).collect();
     tokio::spawn(async move {
+      let mut state_rx = state_tx.lock().await.subscribe();
       loop {
-        let rx_iter = subscriptions.iter_mut().map(|state| {
-          async {
-            state.changed().await?;
-            Ok(state.borrow().clone()) as Result<tab::State>
-          }
-          .boxed()
-        });
-        let (tab_state, ..) = select_ok(rx_iter).await.unwrap();
+        let tab_changed = tab_states[active_tab].changed();
+        let tab_switched = state_rx
+          .wait_for(|state| state.tabs.selected() != active_tab)
+          .map(|state| state.unwrap().tabs.selected());
+        tokio::select! {
+          _ = tab_changed => (),
+          selected_tab = tab_switched => {
+            active_tab = selected_tab;
+            continue;
+          },
+        }
+        let active_tab_state =
+          tab_states[active_tab].borrow().clone();
         let state_tx = state_tx.lock().await;
-        state_tx.send_modify(|state| state.inner = tab_state);
+        state_tx.send_modify(|state| state.inner = active_tab_state);
       }
     });
   }
@@ -127,7 +136,7 @@ impl App {
   }
 
   pub async fn init(mut self) -> Result<Self> {
-    self.switch_map(|tab| async move {
+    self.spawn_tab_abortable(|tab| async move {
       tab.lock().await.resolve_all().await
     });
     Ok(self)
@@ -141,34 +150,32 @@ impl App {
     use Command::*;
     match cmd {
       NextTab => self.next_tab()?,
-      PrevDate => self.switch_map(|tab| async move {
+      PrevDate => self.spawn_tab_abortable(|tab| async move {
         tab.lock().await.prev_date().await
       }),
-      NextDate => self.switch_map(|tab| async move {
+      NextDate => self.spawn_tab_abortable(|tab| async move {
         tab.lock().await.next_date().await
       }),
-      PrevSelection => self.switch_map(|tab| async move {
+      PrevSelection => self.spawn_tab_abortable(|tab| async move {
         tab.lock().await.prev_selection().await
       }),
-      NextSelection => self.switch_map(|tab| async move {
+      NextSelection => self.spawn_tab_abortable(|tab| async move {
         tab.lock().await.next_selection().await
       }),
-      AddRecord => self.concat_map(|tab| async move {
+      AddRecord => self.spawn_tab_blocking(|tab| async move {
         tab.lock().await.add_record().await
       }),
-      DeleteSelectedRecord => self.concat_map(|tab| async move {
-        tab.lock().await.delete_selected_record().await
+      DeleteSelectedRecord => {
+        self.spawn_tab_blocking(|tab| async move {
+          tab.lock().await.delete_selected_record().await
+        })
+      }
+      Undo => self.spawn_tab_blocking(|tab| async move {
+        tab.lock().await.undo().await
       }),
-      Undo => {
-        self.concat_map(
-          |tab| async move { tab.lock().await.undo().await },
-        )
-      }
-      Redo => {
-        self.concat_map(
-          |tab| async move { tab.lock().await.redo().await },
-        )
-      }
+      Redo => self.spawn_tab_blocking(|tab| async move {
+        tab.lock().await.redo().await
+      }),
       Quit => self.should_quit = true,
     }
     Ok(())
@@ -181,13 +188,13 @@ impl App {
       .try_lock()
       .context("use lock?!")?
       .send_modify(|state| state.tabs.select(self.tabs.selected()));
-    self.switch_map(|tab| async move {
+    self.spawn_tab_abortable(|tab| async move {
       tab.lock().await.resolve_all().await
     });
     Ok(())
   }
 
-  fn switch_map<F>(
+  fn spawn_tab_abortable<F>(
     &mut self,
     f: impl Fn(Arc<Mutex<Tab>>) -> F + Send + 'static,
   ) where
@@ -208,12 +215,13 @@ impl App {
     tokio::spawn(async move { f(tab).await.unwrap() })
   }
 
-  fn concat_map<F>(
+  fn spawn_tab_blocking<F>(
     &self,
     f: impl Fn(Arc<Mutex<Tab>>) -> F + Send + 'static,
   ) where
     F: Future<Output = Result<()>> + Send,
   {
+    self.abort_handle.abort();
     self.spawn_tab(f);
   }
 

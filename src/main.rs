@@ -24,8 +24,8 @@ async fn main() -> Result<()> {
 
 fn app() -> App {
   App::new([
-    ("Trains", journal(home().join(".journals/trains"))),
-    ("Smokes", journal(home().join(".journals/smokes"))),
+    ("Trains", 4, journal(home().join(".journals/trains"))),
+    ("Smokes", 1, journal(home().join(".journals/smokes"))),
   ])
 }
 

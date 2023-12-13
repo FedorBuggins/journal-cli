@@ -2,15 +2,25 @@
 pub struct Level {
   count: usize,
   middle: f32,
+  target: usize,
 }
 
 impl Level {
-  pub fn new(count: usize, middle: f32) -> Self {
-    Self { count, middle }
+  pub fn new(count: usize, middle: f32, target: usize) -> Self {
+    Self {
+      count,
+      middle,
+      target,
+    }
   }
 
   pub fn target(&self) -> usize {
-    self.middle as _
+    self._target().round() as _
+  }
+
+  fn _target(&self) -> f32 {
+    let new_middle = (self.middle + self.target as f32) / 2.;
+    new_middle.max(self.middle * 0.8)
   }
 
   pub fn count(&self) -> usize {
@@ -18,10 +28,14 @@ impl Level {
   }
 
   pub fn percentage(&self) -> f32 {
-    self.count as f32 / self.middle
+    self.count as f32 / self._target()
   }
 
-  pub fn middle(&self) -> f32 {
-    self.middle
+  pub fn is_positive(&self) -> bool {
+    self.target as f32 >= self.middle
+  }
+
+  pub fn for_count(&self, count: usize) -> Self {
+    Self { count, ..*self }
   }
 }

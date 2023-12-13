@@ -11,7 +11,7 @@ use ratatui::{
   },
 };
 
-use crate::app::State;
+use crate::app::{level::Level, State};
 
 use super::{layout, styles};
 
@@ -58,22 +58,20 @@ pub fn level_bar(state: &State) -> BarChart<'_> {
         .value(level)
         .text_value(format!("{count}/{target} ({level}%)"))]),
     )
-    .bar_style(
-      styles::RED.fg(level_color(percentage, state.tabs.selected())),
-    )
+    .bar_style(styles::RED.fg(level_color(&state.level)))
 }
 
-fn level_color(mut percentage: f32, tab_index: usize) -> Color {
+fn level_color(level: &Level) -> Color {
   const RGB_MAX: f32 = u8::MAX as f32;
   const K: f32 = 2.5;
-  if tab_index == 0 {
-    percentage = (1. - percentage).abs();
+  let percentage = level.percentage();
+  let mut r = RGB_MAX * percentage * K;
+  let mut g = RGB_MAX * (1. - percentage.powf(K));
+  let mut b = RGB_MAX * (1. - percentage * K);
+  if level.is_positive() {
+    (r, g, b) = (g, r, b);
   }
-  Color::Rgb(
-    (RGB_MAX * percentage * K) as _,
-    (RGB_MAX * (1. - percentage.powf(K))) as _,
-    (RGB_MAX * (1. - percentage * K)) as _,
-  )
+  Color::Rgb(r as _, g as _, b as _)
 }
 
 pub struct DaysBarChart<'a> {
@@ -117,10 +115,10 @@ impl<'a> DaysBarChart<'a> {
           Bar::default()
             .label(Line::styled(label, styles::PRIMARY))
             .value(count as _)
-            .style(styles::PRIMARY.fg(level_color(
-              count as f32 / self.state.level.middle(),
-              self.state.tabs.selected(),
-            )))
+            .style(
+              styles::PRIMARY
+                .fg(level_color(&self.state.level.for_count(count))),
+            )
         }
       })
       .collect();

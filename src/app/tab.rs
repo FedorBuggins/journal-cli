@@ -54,8 +54,9 @@ impl Not for Action {
 }
 
 pub struct Tab {
-  journal: Box<dyn Journal>,
   title: String,
+  target: usize,
+  journal: Box<dyn Journal>,
   state: State,
   undoes: Vec<Action>,
   redoes: Vec<Action>,
@@ -66,6 +67,7 @@ pub struct Tab {
 impl Tab {
   pub fn new(
     title: impl ToString,
+    target: usize,
     journal: Box<dyn Journal>,
   ) -> Self {
     let today = Local::now().date_naive();
@@ -73,8 +75,9 @@ impl Tab {
     let (state_tx, _) = watch::channel(state.clone());
 
     Self {
-      journal,
       title: title.to_string(),
+      target,
+      journal,
       state,
       undoes: vec![],
       redoes: vec![],
@@ -164,7 +167,7 @@ impl Tab {
     } else {
       recent_days_sum / recent_days_count as f32
     };
-    Ok(Level::new(date_count, middle))
+    Ok(Level::new(date_count, middle, self.target))
   }
 
   async fn send_state(&self) -> Result<()> {
