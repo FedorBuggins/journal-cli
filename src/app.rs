@@ -3,13 +3,14 @@ pub mod level;
 mod selectable_list;
 mod tab;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use futures::{Future, FutureExt};
 use tokio::{
   sync::{mpsc, watch, Mutex},
   task::{AbortHandle, JoinHandle},
+  time::sleep,
 };
 
 use self::{
@@ -76,8 +77,12 @@ impl App {
     let state_tx = Arc::new(Mutex::new(state_tx));
     let (changes_tx, changes_rx) = mpsc::channel(1);
 
-    Self::subscribe_on_tabs(&tabs, state_tx.clone());
     Self::broadcast_changes(state_rx.clone(), changes_tx);
+    Self::subscribe_on_tabs(
+      &tabs,
+      state_rx.clone(),
+      state_tx.clone(),
+    );
 
     let tabs =
       tabs.into_iter().map(|t| Arc::new(Mutex::new(t))).collect();
@@ -96,29 +101,33 @@ impl App {
 
   fn subscribe_on_tabs(
     tabs: &[Tab],
+    mut state_rx: watch::Receiver<State>,
     state_tx: Arc<Mutex<watch::Sender<State>>>,
   ) {
+    const FPS: u64 = 60;
+    const DEBOUNCE: Duration = Duration::from_millis(1000 / FPS);
+
     let mut active_tab = 0;
     let mut tab_states: Vec<_> =
       tabs.iter().map(|tab| tab.subscribe()).collect();
+
     tokio::spawn(async move {
-      let mut state_rx = state_tx.lock().await.subscribe();
       loop {
-        let tab_changed = tab_states[active_tab].changed();
+        sleep(DEBOUNCE).await;
+        let tab_state = &mut tab_states[active_tab];
         let tab_switched = state_rx
           .wait_for(|state| state.tabs.selected() != active_tab)
-          .map(|state| state.unwrap().tabs.selected());
+          .map(|_| ());
         tokio::select! {
-          _ = tab_changed => (),
-          selected_tab = tab_switched => {
-            active_tab = selected_tab;
-            continue;
-          },
+          _ = tab_state.changed() => {
+            let tab_state = tab_state.borrow().clone();
+            let state_tx = state_tx.lock().await;
+            state_tx.send_modify(|state| state.inner = tab_state);
+          }
+          _ = tab_switched => {
+            active_tab = state_rx.borrow().tabs.selected();
+          }
         }
-        let active_tab_state =
-          tab_states[active_tab].borrow().clone();
-        let state_tx = state_tx.lock().await;
-        state_tx.send_modify(|state| state.inner = active_tab_state);
       }
     });
   }
