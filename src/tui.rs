@@ -3,6 +3,7 @@ mod event_listener;
 use std::{io, panic};
 
 use anyhow::Result;
+use async_trait::async_trait;
 use crossterm::{
   event::{
     DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent,
@@ -11,7 +12,6 @@ use crossterm::{
   terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Frame, Terminal};
-use tokio::sync::mpsc;
 
 use self::event_listener::EventListener;
 
@@ -24,10 +24,11 @@ pub enum Event {
   Error(String),
 }
 
+#[async_trait]
 pub trait App {
   fn render(&self, f: &mut Frame);
   fn handle_key_event(&mut self, k_event: KeyEvent) -> Result<()>;
-  fn changes(&mut self) -> &mut mpsc::Receiver<()>;
+  async fn changed(&mut self);
   fn should_quit(&self) -> bool;
 }
 
@@ -84,10 +85,9 @@ impl Tui {
   }
 
   async fn run(&mut self, app: &mut impl App) -> Result<()> {
-    self.render(app)?;
     while !app.should_quit() {
       tokio::select! {
-        _ = app.changes().recv() => self.render(app)?,
+        _ = app.changed() => self.render(app)?,
         event = self.events.next() => match event? {
           Event::Resize => self.render(app)?,
           Event::Error(error) => return Err(anyhow::anyhow!(error)),

@@ -7,9 +7,9 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use app::journal::Journal;
+use async_trait::async_trait;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
-use tokio::sync::mpsc;
 
 use self::{
   app::{App, Command},
@@ -17,9 +17,14 @@ use self::{
   tui::Tui,
 };
 
-#[tokio::main]
-async fn main() -> Result<()> {
-  Tui::try_new()?.launch(&mut app().init().await?).await
+fn main() -> Result<()> {
+  tokio::runtime::Builder::new_multi_thread()
+    .worker_threads(2)
+    .enable_all()
+    .build()?
+    .block_on(async {
+      Tui::try_new()?.launch(&mut app().init().await?).await
+    })
 }
 
 fn app() -> App {
@@ -37,6 +42,7 @@ fn journal(dir: impl Into<PathBuf>) -> Box<dyn Journal> {
   Box::new(FsJournal::new(dir))
 }
 
+#[async_trait]
 impl tui::App for App {
   fn render(&self, f: &mut Frame) {
     ui::render(&self.state(), f)
@@ -60,8 +66,8 @@ impl tui::App for App {
     }
   }
 
-  fn changes(&mut self) -> &mut mpsc::Receiver<()> {
-    self.changes()
+  async fn changed(&mut self) {
+    self.changed().await
   }
 
   fn should_quit(&self) -> bool {

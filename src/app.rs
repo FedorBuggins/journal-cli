@@ -8,7 +8,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{Context, Result};
 use futures::{Future, FutureExt};
 use tokio::{
-  sync::{mpsc, watch, Mutex},
+  sync::{watch, Mutex},
   task::{AbortHandle, JoinHandle},
   time::sleep,
 };
@@ -57,7 +57,6 @@ pub struct App {
   tabs: SelectableList<Arc<Mutex<Tab>>>,
   state_tx: Arc<Mutex<watch::Sender<State>>>,
   state_rx: watch::Receiver<State>,
-  changes_rx: mpsc::Receiver<()>,
   abort_handle: AbortHandle,
   should_quit: bool,
 }
@@ -75,9 +74,7 @@ impl App {
     let tab_titles = tabs.iter().map(|tab| tab.title().clone());
     let (state_tx, state_rx) = watch::channel(State::new(tab_titles));
     let state_tx = Arc::new(Mutex::new(state_tx));
-    let (changes_tx, changes_rx) = mpsc::channel(1);
 
-    Self::broadcast_changes(state_rx.clone(), changes_tx);
     Self::subscribe_on_tabs(
       &tabs,
       state_rx.clone(),
@@ -93,7 +90,6 @@ impl App {
       tabs,
       state_tx,
       state_rx,
-      changes_rx,
       abort_handle,
       should_quit: false,
     }
@@ -128,18 +124,6 @@ impl App {
             active_tab = state_rx.borrow().tabs.selected();
           }
         }
-      }
-    });
-  }
-
-  fn broadcast_changes(
-    mut state_rx: watch::Receiver<State>,
-    changes_tx: mpsc::Sender<()>,
-  ) {
-    tokio::spawn(async move {
-      loop {
-        state_rx.changed().await.unwrap();
-        changes_tx.send(()).await.unwrap();
       }
     });
   }
@@ -234,8 +218,8 @@ impl App {
     self.spawn_tab(f);
   }
 
-  pub fn changes(&mut self) -> &mut mpsc::Receiver<()> {
-    &mut self.changes_rx
+  pub async fn changed(&mut self) {
+    self.state_rx.changed().await.unwrap();
   }
 
   pub fn should_quit(&self) -> bool {
