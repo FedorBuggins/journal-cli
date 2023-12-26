@@ -87,26 +87,26 @@ impl Tab {
   }
 
   pub async fn resolve_all(&mut self) -> Result<()> {
-    self.resolve_dates().await?;
+    self.resolve().await?;
     self.state.recs_by_month = self.recs_by_month().await?;
-    self.send_state().await?;
+    self.emit_changes()?;
     Ok(())
   }
 
-  async fn resolve_dates(&mut self) -> Result<()> {
+  async fn resolve(&mut self) -> Result<()> {
     self.state.date = self.days_frame.cur;
-    self.send_state().await?;
+    self.emit_changes()?;
     *self.state.list =
       self.journal.day_records(self.state.date).await?;
-    self.send_state().await?;
+    self.emit_changes()?;
     self.state.level = self.level().await?;
-    self.send_state().await?;
+    self.emit_changes()?;
     self.state.recs_by_hour = self.recs_by_hour().await?;
-    self.send_state().await?;
+    self.emit_changes()?;
     self.state.recs_by_date = self
       .recs_for(self.days_frame.start, self.days_frame.end)
       .await?;
-    self.send_state().await?;
+    self.emit_changes()?;
     Ok(())
   }
 
@@ -151,9 +151,9 @@ impl Tab {
   }
 
   async fn level(&self) -> Result<Level> {
-    let today = Local::now().date_naive();
+    let today = self.state.date;
     let recent_days = self
-      .recs_for(today - Days::new(10), today - Days::new(1))
+      .recs_for(today - Days::new(7), today - Days::new(1))
       .await?;
     let recent_days_iter =
       recent_days.iter().map(|(_, recs)| *recs as f32);
@@ -170,7 +170,7 @@ impl Tab {
     Ok(Level::new(date_count, middle, self.target))
   }
 
-  async fn send_state(&self) -> Result<()> {
+  fn emit_changes(&self) -> Result<()> {
     self.state_tx.send(self.state.clone())?;
     Ok(())
   }
@@ -185,13 +185,13 @@ impl Tab {
 
   pub async fn prev_date(&mut self) -> Result<()> {
     self.days_frame.prev();
-    self.resolve_dates().await?;
+    self.resolve().await?;
     Ok(())
   }
 
   pub async fn next_date(&mut self) -> Result<()> {
     self.days_frame.next();
-    self.resolve_dates().await?;
+    self.resolve().await?;
     Ok(())
   }
 
@@ -199,7 +199,7 @@ impl Tab {
     let s = self.state.list.selected();
     self.state.list.select_prev();
     if s != self.state.list.selected() {
-      self.send_state().await?;
+      self.emit_changes()?;
     }
     Ok(())
   }
@@ -208,7 +208,7 @@ impl Tab {
     let s = self.state.list.selected();
     self.state.list.select_next();
     if s != self.state.list.selected() {
-      self.send_state().await?;
+      self.emit_changes()?;
     }
     Ok(())
   }
@@ -218,7 +218,7 @@ impl Tab {
     self.apply(&action).await?;
     self.undoes.push(!action);
     self.redoes.clear();
-    self.resolve_dates().await?;
+    self.resolve().await?;
     Ok(())
   }
 
@@ -259,7 +259,7 @@ impl Tab {
       self.apply(&action).await?;
       self.undoes.push(!action);
       self.redoes.clear();
-      self.resolve_dates().await?;
+      self.resolve().await?;
     }
     Ok(())
   }
@@ -268,7 +268,7 @@ impl Tab {
     if let Some(action) = self.undoes.pop() {
       self.apply(&action).await?;
       self.redoes.push(!action);
-      self.resolve_dates().await?;
+      self.resolve().await?;
     }
     Ok(())
   }
@@ -277,8 +277,14 @@ impl Tab {
     if let Some(action) = self.redoes.pop() {
       self.apply(&action).await?;
       self.undoes.push(!action);
-      self.resolve_dates().await?;
+      self.resolve().await?;
     }
+    Ok(())
+  }
+
+  pub fn demount(&mut self) -> Result<()> {
+    self.state = State::new(self.state.date);
+    self.emit_changes()?;
     Ok(())
   }
 }

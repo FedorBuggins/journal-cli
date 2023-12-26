@@ -66,7 +66,7 @@ pub fn render(state: &State, f: &mut Frame) {
 
   f.render_widget(
     widgets::time_smoke_records_bar_chart(state)
-      .block(CARD.title(st("Time")))
+      .block(CARD.title(st("Time")).padding(Padding::uniform(1)))
       .style(styles::PRIMARY),
     time,
   );

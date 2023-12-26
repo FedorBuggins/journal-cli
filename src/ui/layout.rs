@@ -16,7 +16,7 @@ impl Body {
     use Constraint::*;
 
     let [tabs, date_list_level_days_time, year, help] =
-      vsplit([Length(2), Length(26), Min(5), Length(1)], size);
+      vsplit([Length(1), Length(28), Min(5), Length(0)], size);
 
     let [date_list_level_days, _, time] = hsplit(
       [Length(42), Length(1), Min(10)],

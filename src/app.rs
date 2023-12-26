@@ -135,8 +135,8 @@ impl App {
     Ok(self)
   }
 
-  pub fn state(&self) -> State {
-    self.state_rx.borrow().clone()
+  pub fn state(&self) -> watch::Ref<State> {
+    self.state_rx.borrow()
   }
 
   pub fn handle_cmd(&mut self, cmd: Command) -> Result<()> {
@@ -175,6 +175,9 @@ impl App {
   }
 
   fn next_tab(&mut self) -> Result<()> {
+    self.spawn_tab_blocking(|tab| async move {
+      tab.lock().await.demount()
+    });
     self.tabs.wrapping_select_next();
     self
       .state_tx

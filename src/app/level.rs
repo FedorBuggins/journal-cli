@@ -32,7 +32,7 @@ impl Level {
   }
 
   pub fn is_positive(&self) -> bool {
-    self.target as f32 >= self.middle
+    self.target as f32 > self.middle
   }
 
   pub fn for_count(&self, count: usize) -> Self {

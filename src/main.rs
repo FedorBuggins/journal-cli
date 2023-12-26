@@ -3,43 +3,70 @@ mod fs_journal;
 mod tui;
 mod ui;
 
-use std::path::PathBuf;
-
 use anyhow::Result;
-use app::journal::Journal;
 use async_trait::async_trait;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 
 use self::{
   app::{App, Command},
-  fs_journal::FsJournal,
   tui::Tui,
 };
+
+mod cfg {
+  use std::path::PathBuf;
+
+  use crate::{app::journal::Journal, fs_journal::FsJournal};
+
+  pub struct Tab {
+    pub title: &'static str,
+    pub target: usize,
+  }
+
+  pub fn tabs() -> Vec<Tab> {
+    [
+      Tab {
+        title: "Smokes",
+        target: 1,
+      },
+      Tab {
+        title: "Trains",
+        target: 4,
+      },
+    ]
+    .into()
+  }
+
+  pub fn journals_dir() -> PathBuf {
+    PathBuf::from(env!("HOME")).join(".journals")
+  }
+
+  pub fn journal(dir: impl Into<PathBuf>) -> Box<dyn Journal> {
+    Box::new(FsJournal::new(dir))
+  }
+}
 
 fn main() -> Result<()> {
   tokio::runtime::Builder::new_multi_thread()
     .worker_threads(2)
     .enable_all()
     .build()?
-    .block_on(async {
-      Tui::try_new()?.launch(&mut app().init().await?).await
-    })
+    .block_on(launch())
+}
+
+async fn launch() -> Result<()> {
+  Tui::try_new()?.launch(&mut app().init().await?).await?;
+  Ok(())
 }
 
 fn app() -> App {
-  App::new([
-    ("Trains", 4, journal(home().join(".journals/trains"))),
-    ("Smokes", 1, journal(home().join(".journals/smokes"))),
-  ])
-}
-
-fn home() -> PathBuf {
-  PathBuf::from(env!("HOME"))
-}
-
-fn journal(dir: impl Into<PathBuf>) -> Box<dyn Journal> {
-  Box::new(FsJournal::new(dir))
+  App::new(cfg::tabs().into_iter().map(
+    |cfg::Tab { title, target }| {
+      let journal =
+        cfg::journal(cfg::journals_dir().join(title.to_lowercase()));
+      (title, target, journal)
+    },
+  ))
 }
 
 #[async_trait]
