@@ -1,6 +1,8 @@
 use std::cmp::max;
 
-use chrono::{Datelike, Local, Month, NaiveDate, Timelike, Weekday};
+use chrono::{
+  Datelike, Local, Month, NaiveDate, NaiveTime, Timelike, Weekday,
+};
 use ratatui::{
   prelude::{Buffer, Constraint, Direction, Rect},
   style::{Color, Stylize},
@@ -145,7 +147,7 @@ impl<'a> DaysBarChart<'a> {
       .recs_by_date
       .iter()
       .map(|(date, _)| {
-        let weekday = weekday(date);
+        let weekday = weekday(*date);
         let weekday_symbols = &weekday.to_string()[..2];
         let style = if date == &self.state.date {
           styles::ACCENT
@@ -163,7 +165,7 @@ impl<'a> DaysBarChart<'a> {
 
 impl<'a> Widget for DaysBarChart<'a> {
   fn render(mut self, mut area: Rect, buf: &mut Buffer) {
-    use Constraint::*;
+    use Constraint::{Length, Min};
 
     self.render_block(&mut area, buf);
     let [chart, weekdays] = layout::vsplit([Min(5), Length(1)], area);
@@ -172,8 +174,8 @@ impl<'a> Widget for DaysBarChart<'a> {
   }
 }
 
-fn weekday(date: &NaiveDate) -> Weekday {
-  date.and_time(Default::default()).weekday()
+fn weekday(date: NaiveDate) -> Weekday {
+  date.and_time(NaiveTime::default()).weekday()
 }
 
 fn bar_max(max_val: u64) -> u64 {
@@ -186,7 +188,7 @@ pub fn time_smoke_records_bar_chart(state: &State) -> BarChart<'_> {
 
   let bars: Vec<_> = (0..HOURS_COUNT)
     .map(|h| {
-      let label = format!("{:0>2}:00", h);
+      let label = format!("{h:0>2}:00");
       let value = state.recs_by_hour.get(&h).map_or(0, |v| *v);
       Bar::default()
         .label(label.into())

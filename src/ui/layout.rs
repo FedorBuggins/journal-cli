@@ -13,7 +13,7 @@ pub struct Body {
 
 impl Body {
   pub fn new(size: Rect) -> Self {
-    use Constraint::*;
+    use Constraint::{Length, Min, Percentage};
 
     let [tabs, date_list_level_days_time, year, help] =
       vsplit([Length(1), Length(28), Min(5), Length(0)], size);

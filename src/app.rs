@@ -40,6 +40,7 @@ impl State {
   }
 }
 
+#[derive(Clone, Copy)]
 pub enum Command {
   NextTab,
   PrevDate,
@@ -65,7 +66,7 @@ impl App {
   pub fn new<I, S>(args: I) -> Self
   where
     I: IntoIterator<Item = (S, usize, Box<dyn Journal>)>,
-    S: ToString,
+    S: Into<String>,
   {
     let tabs: Vec<_> = args
       .into_iter()
@@ -105,7 +106,7 @@ impl App {
 
     let mut active_tab = 0;
     let mut tab_states: Vec<_> =
-      tabs.iter().map(|tab| tab.subscribe()).collect();
+      tabs.iter().map(Tab::subscribe).collect();
 
     tokio::spawn(async move {
       loop {
@@ -120,7 +121,7 @@ impl App {
             let state_tx = state_tx.lock().await;
             state_tx.send_modify(|state| state.inner = tab_state);
           }
-          _ = tab_switched => {
+          () = tab_switched => {
             active_tab = state_rx.borrow().tabs.selected();
           }
         }
@@ -128,11 +129,11 @@ impl App {
     });
   }
 
-  pub async fn init(mut self) -> Result<Self> {
+  pub fn init(mut self) -> Self {
     self.spawn_tab_abortable(|tab| async move {
       tab.lock().await.resolve_all().await
     });
-    Ok(self)
+    self
   }
 
   pub fn state(&self) -> watch::Ref<State> {
@@ -140,7 +141,11 @@ impl App {
   }
 
   pub fn handle_cmd(&mut self, cmd: Command) -> Result<()> {
-    use Command::*;
+    use Command::{
+      AddRecord, DeleteSelectedRecord, NextDate, NextSelection,
+      NextTab, PrevDate, PrevSelection, Quit, Redo, Undo,
+    };
+
     match cmd {
       NextTab => self.next_tab()?,
       PrevDate => self.spawn_tab_abortable(|tab| async move {
@@ -150,10 +155,10 @@ impl App {
         tab.lock().await.next_date().await
       }),
       PrevSelection => self.spawn_tab_abortable(|tab| async move {
-        tab.lock().await.prev_selection().await
+        tab.lock().await.prev_selection()
       }),
       NextSelection => self.spawn_tab_abortable(|tab| async move {
-        tab.lock().await.next_selection().await
+        tab.lock().await.next_selection()
       }),
       AddRecord => self.spawn_tab_blocking(|tab| async move {
         tab.lock().await.add_record().await
@@ -161,7 +166,7 @@ impl App {
       DeleteSelectedRecord => {
         self.spawn_tab_blocking(|tab| async move {
           tab.lock().await.delete_selected_record().await
-        })
+        });
       }
       Undo => self.spawn_tab_blocking(|tab| async move {
         tab.lock().await.undo().await

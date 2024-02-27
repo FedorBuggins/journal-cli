@@ -64,9 +64,11 @@ pub struct Tab {
   state_tx: watch::Sender<State>,
 }
 
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_precision_loss)]
 impl Tab {
   pub fn new(
-    title: impl ToString,
+    title: impl Into<String>,
     target: usize,
     journal: Box<dyn Journal>,
   ) -> Self {
@@ -75,7 +77,7 @@ impl Tab {
     let (state_tx, _) = watch::channel(state.clone());
 
     Self {
-      title: title.to_string(),
+      title: title.into(),
       target,
       journal,
       state,
@@ -158,8 +160,9 @@ impl Tab {
     let recent_days_iter =
       recent_days.iter().map(|(_, recs)| *recs as f32);
     let recent_days_sum: f32 = recent_days_iter.clone().sum();
-    let recent_days_count =
-      recent_days_iter.filter(|count| count != &0.).count();
+    let recent_days_count = recent_days_iter
+      .filter(|count| (count - 0.).abs() > f32::EPSILON)
+      .count();
     let date_count =
       self.journal.day_records(self.state.date).await?.len();
     let middle = if recent_days_count == 0 {
@@ -195,7 +198,7 @@ impl Tab {
     Ok(())
   }
 
-  pub async fn prev_selection(&mut self) -> Result<()> {
+  pub fn prev_selection(&mut self) -> Result<()> {
     let s = self.state.list.selected();
     self.state.list.select_prev();
     if s != self.state.list.selected() {
@@ -204,7 +207,7 @@ impl Tab {
     Ok(())
   }
 
-  pub async fn next_selection(&mut self) -> Result<()> {
+  pub fn next_selection(&mut self) -> Result<()> {
     let s = self.state.list.selected();
     self.state.list.select_next();
     if s != self.state.list.selected() {

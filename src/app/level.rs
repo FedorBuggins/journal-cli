@@ -5,6 +5,9 @@ pub struct Level {
   target: usize,
 }
 
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_sign_loss)]
 impl Level {
   pub fn new(count: usize, middle: f32, target: usize) -> Self {
     Self {

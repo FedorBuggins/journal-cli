@@ -50,10 +50,14 @@ fn handle_crossterm_event(
 ) -> Result<(), SendError<TuiEvent>> {
   match event {
     Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-      tx.send(TuiEvent::KeyPress(key))?
+      tx.send(TuiEvent::KeyPress(key))?;
     }
-    Ok(Event::Resize(_, _)) => tx.send(TuiEvent::Resize)?,
-    Err(error) => tx.send(TuiEvent::Error(error.to_string()))?,
+    Ok(Event::Resize(_, _)) => {
+      tx.send(TuiEvent::Resize)?;
+    }
+    Err(error) => {
+      tx.send(TuiEvent::Error(error.to_string()))?;
+    }
     _ => (),
   }
   Ok(())

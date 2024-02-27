@@ -4,7 +4,6 @@ mod tui;
 mod ui;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 
@@ -55,7 +54,7 @@ fn main() -> Result<()> {
 }
 
 async fn launch() -> Result<()> {
-  Tui::try_new()?.launch(&mut app().init().await?).await?;
+  Tui::try_new()?.launch(&mut app().init()).await?;
   Ok(())
 }
 
@@ -69,15 +68,18 @@ fn app() -> App {
   ))
 }
 
-#[async_trait]
 impl tui::App for App {
   fn render(&self, f: &mut Frame) {
-    ui::render(&self.state(), f)
+    ui::render(&self.state(), f);
   }
 
   fn handle_key_event(&mut self, k_event: KeyEvent) -> Result<()> {
-    use Command::*;
-    use KeyCode::*;
+    use Command::{
+      AddRecord, DeleteSelectedRecord, NextDate, NextSelection,
+      NextTab, PrevDate, PrevSelection, Quit, Redo, Undo,
+    };
+    use KeyCode::{Backspace, Char, Down, Esc, Left, Right, Tab, Up};
+
     match k_event.code {
       Esc => self.handle_cmd(Quit),
       Tab => self.handle_cmd(NextTab),
@@ -94,7 +96,7 @@ impl tui::App for App {
   }
 
   async fn changed(&mut self) {
-    self.changed().await
+    self.changed().await;
   }
 
   fn should_quit(&self) -> bool {
